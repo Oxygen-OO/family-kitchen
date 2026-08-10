@@ -5,25 +5,33 @@
 ## 接口
 
 ```ts
-// orders: 该餐次全部订单(含成员 openid 与 memberName 快照)
+// orders: 该餐次全部订单(含 user_openid 与 user_nickname 快照)
 // dishes: 参与聚合的菜品全量(含已软删 —— 历史引用必须回显)
 buildSummary(orders: OrderDoc[], dishes: DishDoc[]): PrepSummary
 ```
 
 ```ts
 interface PrepSummary {
-  byDish: { dishId, dishName, members: {openid, nickname}[] }[]   // 按菜聚合, 列出点选成员
-  ingredients: { name, amount: string, dishCount: number }[]      // 按食材精确去重合并
+  byDish: {
+    dishId, dishName,                 // 快照名
+    totalQuantity: number,            // 份数合计
+    orderedBy: {openid, nickname, quantity}[],   // nickname 随单快照
+    removed: boolean                  // 菜品已下架/软删时标注
+  }[]
+  ingredients: { name, amountText: string, dishCount: number }[]   // 按 name 精确去重合并
   generatedAt: number
 }
 ```
 
 ## 聚合规则（全部在这一个函数里）
 
-- **按菜聚合**：以订单 entries 中的 `dishId + dishName 快照` 为准——菜品软删后历史照常回显；同一道菜被多个成员点选则 members 列出全部（MemberName 随单快照，成员改名不影响历史汇总）。
-- **食材精确去重**：仅**名称完全一致**才合并为一行（「西红柿」与「番茄」是两行，ADR-0003）；`amount` 为该食材在各菜用量文本的**直接拼接**（如「300克 · 200克」，不做计量换算）；`dishCount` 记录来自几道菜，供备餐者判断冗余。
-- 订单为空 → 空数组的干净汇总；重复点选同一菜去重（每人每菜一条）。
+- **按菜聚合**：以订单 dishes[] 中的 `dish_id + name 快照` 为准——菜品软删后历史照常回显并标注 removed；同一道菜多人点选 → orderedBy 列出每人份数，totalQuantity 合计。
+- **食材精确去重**：提取各菜的 ingredients[]（结构化 `{name, amount}`），仅**名称完全一致**才合并为一行（「西红柿」与「番茄」是两行，ADR-0003）；同名食材的用量文本按菜品/份数**拼接而绝不计算**：
+  - 同菜多人点或多份：`amount ×N`（如 `鸡蛋 2 个 ×2`）；
+  - 不同菜品同名食材：文本直接拼接（如 `2 个 + 3 个`）；
+  - `dishCount` 记录涉及几道菜，供备餐者判断冗余。
+- 订单为空 → 空数组的干净汇总；同一成员同一菜去重（一条订单内 dishes 合并 quantity）。
 
 ## 正确性即测试面
 
-直接纯函数单测，断言逐字段：两菜共享食材合并一行、名称仅精确匹配、软删菜回显快照名、memberName 快照、空订单边界。
+直接纯函数单测，断言逐字段：两菜共享食材合并一行、名称仅精确匹配、软删菜快照回显+removed、memberName 快照、quantity 的 ×N 标注、空订单边界。

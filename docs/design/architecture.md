@@ -1,11 +1,11 @@
-# 家庭厨房 · 代码库架构 (v1)
+# 家庭厨房 · 代码库架构 (v2)
 
 ## 分层与 seam
 
 业务逻辑只允许出现在黑线以下；页面永远不直接碰云数据库。
 
 ```
-小程序页面 (薄壳: family-home / menu / dish-edit / meal / prep / settings / invite)
+小程序页面 (薄壳: onboarding / index / dishes / meal / plan / my / settings)
    │ seam 1: wx.cloud.callFunction(action, payload) —— 客户端只学 action 名与载荷
    ▼
 云函数: cloudfunctions/family-kitchen/  (单函数起步, 见「部署形态」)
@@ -24,21 +24,21 @@
 
 ## 部署形态
 
-**MVP 用一个云函数** `family-kitchen`：微信云开发允许同一函数挂多个定时触发器，cron 触发的 event 与客户端 action 都进 `index.js`，按 `event.action === 'scanDue'` 等分派——零共享代码问题、零冷启动差异。未来拆分（业务/cron 分离、独立缩放）时只换壳文件与触发器配置，lib 原封不动（这是 ports 收在 lib 的回报）。cron 粒度：每 5 分钟一次截止扫描。
+**MVP 用一个云函数** `family-kitchen`：微信云开发允许同一函数挂多个定时触发器，cron 触发的 event 与客户端 action 都进 `index.js`，按 action 分派——零共享代码问题、零冷启动差异。未来拆分时只换壳文件与触发器配置，lib 原封不动。cron：每 5 分钟一次截止扫描（表达式 `0 */5 * * * * *`，7 段含秒）。
 
 ## 数据模型（云数据库集合）
 
-主键约定：**派生复合 ID 代替随机 `_id`**——文档库无跨文档事务与唯一索引，ID 空间是唯一可靠的并发/唯一性原语。文档键（date）与集合字段同名写法统一为 `date('YYYY-MM-DD')`。
+主键约定：`meals` 用派生复合 ID（`familyId:date:slot`）保证 日期×slot 唯一；其余集合用随机 `_id`，唯一性经查询+业务校验保证（成员上限类不变量由引擎把守）。
 
 | 集合 | _id | 关键字段 | 约定 |
 |---|---|---|---|
-| `families` | 自增/随机 | name, creator(openid), members: [{openid, nickname, joinedAt}], memberOpenids: [openid], frozen: bool, createdAt | 成员数 ≤5（含立家者）；`memberOpenids` 冗余数组供「我的家庭列表」查询（elemMatch 不可靠时兜底，数据量 ≤5×3 极小） |
-| `invites` | 随机 | familyId, code(唯一), createdBy, createdAt, expiresAt(+7天), usedBy | 满员/过期/已用/冻结即失效 |
-| `dishes` | 随机 | familyId, name, imageFileId?, description?, tags[], ingredients: [{name, amount}], isDeleted, updatedBy, updatedAt, createdAt | 软删：`isDeleted: true` |
-| `meals` | `familyId:date:slot` | familyId, date, slot('breakfast'\|'lunch'\|'dinner'), status('open'\|'closed'\|'prepped'), initiatedBy, closeAt, closedAt?, preppedAt?, closedBy('scan'\|'manual'), summary?: PrepSummary | 日期×餐次唯一由 ID 空间天然保证；summary 为截止时物化的备餐快照 |
-| `orders` | `mealId:openid` | mealId, openid, memberName(快照), entries: [{dishId, dishName快照}], copiedFromMealId?, updatedAt | 每人每餐一单（upsert），全量替换语义；同名快照保证菜品软删后历史可回显、点餐汇总可列出成员 |
-| `subscribe_grants` | `mealId:openid` | mealId, openid, consumed: bool, consumedAt? | 一次性订阅配额记账：一人一餐一条 |
-| `users` | openid | openid, nickname(登录时自填, 2022 后微信不回传昵称), createdAt | 昵称冗余进 families.members[] 供汇总显示 |
+| `families` | 随机 | name, creator_openid, invite_code, expires_at(+7天), member_count, status('active'\|'frozen'), dissolved_at?, created_at | 成员数 ≤5（含立家者）；**同一时刻只有一个有效邀请码，重新生成即旧码失效** |
+| `family_members` | 随机 | family_id, user_openid, role('creator'\|'member'), joined_at | 主权限链表；一人至多属 3 个家庭 |
+| `dishes` | 随机 | family_id, name, image?, description?, tags[], ingredients: [{name, amount}], is_available, is_deleted, created_by, created_at | 软删：`is_deleted: true`；**食材必为结构化 [{name, amount}]**（汇总器精确去重的输入契约） |
+| `meals` | `familyId:date:slot` | family_id, date, slot('breakfast'\|'lunch'\|'dinner'), status('ongoing'\|'closed'\|'prepared'), initiated_by, deadline, closed_at?, prepared_by?, prepared_at?, summary?: PrepSummary | 日期×slot 唯一由 ID 空间天然保证；summary 为截止时物化的备餐快照 |
+| `orders` | 随机 | meal_id, family_id, user_openid, user_nickname(快照), dishes: [{dish_id, name, quantity}]（name 快照）, note, created_at | 每人每餐一单（upsert）；**取消 = 删除文档**，不存在 cancelled 态；快照固化不回退 |
+| `subscribes` | 随机 | meal_id, user_openid, template_id, granted: bool, granted_at, consumed: bool, sent: bool | 一次性订阅配额记账：授权折叠（每人每餐只弹一次）、at-most-once 消费 |
+| `users` | openid | openid, nickname, avatar, created_at | 2022 后微信不回传昵称，首登自填 |
 
 ## 模块清单
 
@@ -59,4 +59,4 @@
 
 ## 范围引用
 
-领域规则源：CONTEXT.md（词汇与不变量）、docs/adr/0001-0003（家庭独立实体 / 一次性订阅 / 数据保守主义）。MVP 边界（无支付、无多余餐次、无推送催点、授权仅随点餐提交发生）见会话定案。
+领域规则源：CONTEXT.md（词汇与不变量）、docs/adr/0001-0003（家庭独立实体 / 一次性订阅 / 数据保守主义）。MVP 边界与工单见 GitHub Issues（T1–T11，含原生阻塞依赖）。
