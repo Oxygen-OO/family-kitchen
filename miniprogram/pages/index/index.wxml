@@ -30,6 +30,10 @@
       disabled="{{inviting}}"
       bindtap="onInvite"
     >邀请家人</button>
+    <button
+      class="menu-btn"
+      bindtap="onOpenMenu"
+    >家庭菜单</button>
   </view>
 
   <view class="empty" wx:else>

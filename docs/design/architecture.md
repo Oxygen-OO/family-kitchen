@@ -14,6 +14,7 @@
    │   ├── identity/          登录与身份层 (login/saveProfile/startup, users 档案 + 启动路由判定)
    │   ├── meal-engine/       餐次引擎 (全部餐次/点餐/截止规则)
    │   ├── family-engine/     家庭引擎 (立家/邀请/转让/解散)
+   │   ├── dish-engine/       菜品引擎 (增删改查/结构化食材/软删恢复/上下架/当日引用保护)
    │   ├── summarizer/        备餐汇总器 (纯函数)
    │   └── ports/              云数据库/Clock/订阅消息 适配器 (唯一 import wx-server-sdk 的地方)
    ▼ seam 2: ports —— 云数据库 / 微信订阅消息(外部) / 时间
@@ -48,9 +49,14 @@
 | IdentityEngine | lib/identity | 3 个方法（见 identity.md） | 首登 get-or-create、自填档案、启动路由判定、客户端缓存兜底 |
 | MealEngine | lib/meal-engine | 7 个方法（见 meal-engine.md） | 状态机+截止管线+幂等+授权消费，全部规则收在一个类后 |
 | FamilyEngine | lib/family-engine | 7 个方法（见 family-engine.md） | 立家/邀请/转让/解散不变量 |
+| DishEngine | lib/dish-engine | 7 个方法（见 dishes.md） | 结构化食材契约、软删+当日引用保护、信任模型 |
 | PrepSummarizer | lib/summarizer | 1 个纯函数 `buildSummary` | 按菜聚合+食材精确去重合并 |
 | 入口壳 | index.js | action 路由 | 刻意薄，不承载规则 |
 | 页面 | pages/* | 呈现 + 调 seam 1 | 客户端规则知识为零 |
+
+## 错误码储备
+
+域引擎锁定的错误码分布见各模块文档：identity.md（`USER_NOT_FOUND | NICKNAME_* | AVATAR_INVALID`）、family-engine.md、dishes.md（T4 增补 `DISH_NOT_FOUND | DISH_IN_USE | DISH_NAME_* | IMAGE_INVALID | INGREDIENTS_INVALID | TAGS_INVALID`，守卫复用 `NOT_MEMBER | FAMILY_FROZEN`）。风格统一：语义化 SCREAMING_SNAKE，代码即契约。
 
 ## 测试策略
 

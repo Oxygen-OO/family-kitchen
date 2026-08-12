@@ -1,0 +1,78 @@
+<view class="edit">
+  <view class="field">
+    <text class="label">名称<text class="required">*</text></text>
+    <input class="input" placeholder="如：番茄炒蛋" value="{{name}}" maxlength="30" bindinput="onNameInput" />
+  </view>
+
+  <view class="field">
+    <text class="label">图片</text>
+    <view class="image-field" wx:if="{{image}}">
+      <image class="preview" src="{{image}}" mode="aspectFill" />
+      <view class="image-actions">
+        <text class="image-btn" bindtap="onChooseImage">更换</text>
+        <text class="image-btn danger" bindtap="onRemoveImage">移除</text>
+      </view>
+    </view>
+    <view class="image-picker" wx:else bindtap="onChooseImage">
+      <text class="image-picker-text">{{uploading ? '上传中…' : '+ 选择图片'}}</text>
+    </view>
+  </view>
+
+  <view class="field">
+    <text class="label">描述</text>
+    <textarea class="textarea" placeholder="口味、做法等（选填）" value="{{description}}" maxlength="200" bindinput="onDescriptionInput" />
+  </view>
+
+  <view class="field">
+    <view class="label-row">
+      <text class="label">食材清单</text>
+      <text class="row-add" bindtap="onAddIngredient">+ 添加食材</text>
+    </view>
+    <view class="ingredient-row" wx:for="{{ingredients}}" wx:key="index">
+      <input
+        class="ingredient-input"
+        placeholder="食材名称"
+        value="{{item.name}}"
+        data-index="{{index}}"
+        bindinput="onIngredientNameInput"
+      />
+      <input
+        class="ingredient-input amount"
+        placeholder="用量，如 2 个"
+        value="{{item.amount}}"
+        data-index="{{index}}"
+        bindinput="onIngredientAmountInput"
+      />
+      <text class="row-remove" data-index="{{index}}" bindtap="onRemoveIngredient">删除</text>
+    </view>
+    <text class="field-hint" wx:if="{{ingredients.length === 0}}">还没有食材，点「添加食材」逐项录入名称与用量</text>
+  </view>
+
+  <view class="field">
+    <text class="label">标签（最多 6 个）</text>
+    <view class="tag-pool">
+      <text
+        wx:for="{{presetTags}}"
+        wx:key="*this"
+        class="tag-chip {{tags.indexOf(item) >= 0 ? 'active' : ''}}"
+        data-tag="{{item}}"
+        bindtap="onPresetTagTap"
+      >{{item}}</text>
+    </view>
+    <view class="custom-tag" wx:if="{{tags.length > 0}}">
+      <text
+        wx:for="{{tags}}"
+        wx:key="*this"
+        class="tag-chip active removable"
+        data-tag="{{item}}"
+        bindtap="onRemoveTag"
+      >{{item}} ✕</text>
+    </view>
+    <view class="custom-row">
+      <input class="input custom-input" placeholder="自定义标签" value="{{customTag}}" maxlength="10" bindinput="onCustomTagInput" />
+      <text class="row-add" bindtap="onAddCustomTag">添加</text>
+    </view>
+  </view>
+
+  <button class="save-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="onSave">保存</button>
+</view>

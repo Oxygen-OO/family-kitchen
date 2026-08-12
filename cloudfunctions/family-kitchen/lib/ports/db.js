@@ -116,4 +116,69 @@ function createFamilyStore(db) {
   }
 }
 
-module.exports = { createIdentityStore, createFamilyStore }
+// meals/orders 集合由 T6 MealEngine 独占写入; 本 Store 只读做删除前置引用保护。
+// 集合尚不存在时 get() 抛「集合不存在」——折叠为空数组返回, 绝不因缺集合报错(见 dishes.md)。
+async function collectionOrEmpty(query) {
+  try {
+    const res = await query.get()
+    return res.data || []
+  } catch (err) {
+    if (isNotFound(err)) return []
+    throw err
+  }
+}
+
+function createDishStore(db) {
+  const dishes = db.collection('dishes')
+  const meals = db.collection('meals')
+  const orders = db.collection('orders')
+  const _ = db.command
+
+  return {
+    getDish: async (dishId) => {
+      try {
+        return unpack(await dishes.doc(dishId).get())
+      } catch (err) {
+        if (isNotFound(err)) return null
+        throw err
+      }
+    },
+    createDish: async (doc) => {
+      const res = await dishes.add({ data: doc })
+      return { ...doc, _id: res._id }
+    },
+    updateDish: async (dishId, patch) => {
+      try {
+        await dishes.doc(dishId).update({ data: patch })
+        return unpack(await dishes.doc(dishId).get())
+      } catch (err) {
+        if (isNotFound(err)) {
+          const nf = new Error(`dishes ${dishId} not found`)
+          nf.code = 'NOT_FOUND'
+          throw nf
+        }
+        throw err
+      }
+    },
+    listDishes: async (familyId, isDeleted) => {
+      const rows = await collectionOrEmpty(
+        dishes.where({ family_id: familyId, is_deleted: isDeleted })
+          .orderBy('created_at', 'desc')
+          .limit(1000)
+      )
+      return rows.map((row) => ({ ...row }))
+    },
+    findOrderRefs: async ({ familyId, dishId, date }) => {
+      const mealRows = await collectionOrEmpty(
+        meals.where({ family_id: familyId, date, status: _.in(['ongoing', 'closed']) }).field({ _id: true }).limit(1000)
+      )
+      const mealIds = mealRows.map((row) => row._id)
+      if (mealIds.length === 0) return []
+      return collectionOrEmpty(
+        orders.where({ meal_id: _.in(mealIds), 'dishes.dish_id': dishId }).limit(1)
+      )
+    },
+  }
+}
+
+module.exports = { createIdentityStore, createFamilyStore, createDishStore }

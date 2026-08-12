@@ -1,7 +1,10 @@
 {
   "pages": [
     "pages/index/index",
-    "pages/onboarding/onboarding"
+    "pages/onboarding/onboarding",
+    "pages/dishes/dishes",
+    "pages/dish-edit/dish-edit",
+    "pages/dishes-removed/dishes-removed"
   ],
   "window": {
     "navigationBarTitleText": "家庭厨房",

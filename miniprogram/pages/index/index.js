@@ -47,6 +47,11 @@ Page({
     wx.showToast({ title: `已切换到「${family.name}」`, icon: 'none' })
   },
 
+  onOpenMenu() {
+    if (!this.data.currentFamilyId) return
+    wx.navigateTo({ url: '/pages/dishes/dishes' })
+  },
+
   async onInvite() {
     if (this.data.inviting) return
     this.setData({ inviting: true })

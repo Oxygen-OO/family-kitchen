@@ -6,12 +6,14 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
 const { createIdentityEngine } = require('./lib/identity/index.js')
 const { createFamilyEngine } = require('./lib/family-engine/index.js')
-const { createIdentityStore, createFamilyStore } = require('./lib/ports/db.js')
+const { createDishEngine } = require('./lib/dish-engine/index.js')
+const { createIdentityStore, createFamilyStore, createDishStore } = require('./lib/ports/db.js')
 
 const db = cloud.database()
 const identityStore = createIdentityStore(db)
 const identity = createIdentityEngine(identityStore)
 const family = createFamilyEngine(createFamilyStore(db), { now: () => Date.now() })
+const dish = createDishEngine(createDishStore(db), { now: () => Date.now() })
 
 // 昵称一律取 users 档案（T1 查询能力），不信任客户端自称；顺带校验登录态
 async function userByOpenid(openid) {
@@ -49,6 +51,32 @@ const actions = {
     event.__openid,
     { now: Date.now() }
   ),
+  listDishes: (event) => dish.listDishes({ familyId: event.familyId }, event.__openid),
+  listRemovedDishes: (event) => dish.listRemovedDishes({ familyId: event.familyId }, event.__openid),
+  createDish: (event) => dish.createDish({
+    familyId: event.familyId,
+    name: event.name,
+    image: event.image,
+    description: event.description,
+    ingredients: event.ingredients,
+    tags: event.tags,
+  }, event.__openid),
+  updateDish: (event) => dish.updateDish({
+    familyId: event.familyId,
+    dishId: event.dishId,
+    name: event.name,
+    image: event.image,
+    description: event.description,
+    ingredients: event.ingredients,
+    tags: event.tags,
+  }, event.__openid),
+  setDishAvailable: (event) => dish.setDishAvailable({
+    familyId: event.familyId,
+    dishId: event.dishId,
+    isAvailable: event.isAvailable,
+  }, event.__openid),
+  deleteDish: (event) => dish.deleteDish({ familyId: event.familyId, dishId: event.dishId }, event.__openid),
+  restoreDish: (event) => dish.restoreDish({ familyId: event.familyId, dishId: event.dishId }, event.__openid),
 }
 
 function openidOf() {

@@ -1,0 +1,17 @@
+<view class="removed">
+  <view class="empty" wx:if="{{dishes.length === 0}}">
+    <text class="empty-title">没有已下架的菜品</text>
+    <text class="empty-subtitle">删除的菜品会出现在这里，可随时恢复</text>
+  </view>
+
+  <view class="row" wx:for="{{dishes}}" wx:key="dish_id">
+    <view class="row-body">
+      <text class="row-name">{{item.name}}</text>
+      <text class="row-ingredients" wx:if="{{item.ingredients.length > 0}}">{{ingredientsText(item.ingredients)}}</text>
+      <view class="row-tags" wx:if="{{item.tags.length > 0}}">
+        <text class="row-tag" wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
+      </view>
+    </view>
+    <button class="restore-btn" data-id="{{item.dish_id}}" bindtap="onRestore">恢复</button>
+  </view>
+</view>

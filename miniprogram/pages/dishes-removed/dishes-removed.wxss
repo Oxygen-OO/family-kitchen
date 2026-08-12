@@ -1,0 +1,80 @@
+.removed {
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-name {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.row-ingredients {
+  display: block;
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+.row-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.row-tag {
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+  background: #f7f8fa;
+  color: #999;
+  font-size: 22rpx;
+}
+
+.restore-btn {
+  margin: 0;
+  padding: 0 28rpx;
+  height: 60rpx;
+  line-height: 60rpx;
+  background: #07c160;
+  color: #fff;
+  border-radius: 32rpx;
+  font-size: 26rpx;
+  flex-shrink: 0;
+}
+
+.empty {
+  margin-top: 160rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.empty-title {
+  font-size: 30rpx;
+  color: #666;
+}
+
+.empty-subtitle {
+  font-size: 24rpx;
+  color: #bbb;
+}

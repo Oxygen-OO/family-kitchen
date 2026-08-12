@@ -40,6 +40,13 @@ const api = {
   joinByCode: (code) => call('joinByCode', { code }),
   myFamilies: () => call('myFamilies'),
   generateInviteCode: (familyId) => call('generateInviteCode', { familyId }),
+  listDishes: (familyId) => call('listDishes', { familyId }),
+  listRemovedDishes: (familyId) => call('listRemovedDishes', { familyId }),
+  createDish: (familyId, dish) => call('createDish', { familyId, ...dish }),
+  updateDish: (familyId, dishId, dish) => call('updateDish', { familyId, dishId, ...dish }),
+  setDishAvailable: (familyId, dishId, isAvailable) => call('setDishAvailable', { familyId, dishId, isAvailable }),
+  deleteDish: (familyId, dishId) => call('deleteDish', { familyId, dishId }),
+  restoreDish: (familyId, dishId) => call('restoreDish', { familyId, dishId }),
 }
 
 function initCloud() {

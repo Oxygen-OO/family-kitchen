@@ -1,0 +1,112 @@
+<view class="dishes">
+  <view class="toolbar">
+    <input
+      class="search"
+      placeholder="搜索菜品名称"
+      value="{{search}}"
+      bindinput="onSearchInput"
+    />
+    <view class="view-switcher">
+      <text class="view-btn {{viewMode === 'card' ? 'active' : ''}}" data-mode="card" bindtap="onViewMode">大图</text>
+      <text class="view-btn {{viewMode === 'row' ? 'active' : ''}}" data-mode="row" bindtap="onViewMode">小图</text>
+      <text class="view-btn {{viewMode === 'minimal' ? 'active' : ''}}" data-mode="minimal" bindtap="onViewMode">极简</text>
+    </view>
+  </view>
+
+  <scroll-view class="tag-bar" scroll-x wx:if="{{tags.length > 0}}">
+    <view class="tag-row">
+      <text class="tag-chip {{activeTag === '' ? 'active' : ''}}" data-tag="" bindtap="onTagTap">全部</text>
+      <text
+        wx:for="{{tags}}"
+        wx:key="*this"
+        class="tag-chip {{activeTag === item ? 'active' : ''}}"
+        data-tag="{{item}}"
+        bindtap="onTagTap"
+      >{{item}}</text>
+    </view>
+  </scroll-view>
+
+  <view class="topbar">
+    <text class="removed-link" bindtap="onOpenRemoved" wx:if="{{removedCount > 0}}">已下架 {{removedCount}} 道</text>
+    <button class="add-btn" bindtap="onAddDish">+ 添加菜品</button>
+  </view>
+
+  <view class="empty" wx:if="{{filtered.length === 0}}">
+    <text class="empty-title">{{search || activeTag ? '没有匹配的菜品' : '菜单还是空的'}}</text>
+    <text class="empty-subtitle" wx:if="{{!search && !activeTag}}">添加第一道菜，开始共享菜单</text>
+  </view>
+
+  <!-- 大图视图 -->
+  <view wx:if="{{viewMode === 'card'}}">
+    <view class="card" wx:for="{{filtered}}" wx:key="dish_id">
+      <image class="card-img" src="{{item.image}}" mode="aspectFill" wx:if="{{item.image}}" />
+      <view class="card-img card-img-empty" wx:else>
+        <text class="card-img-text">{{item.name}}</text>
+      </view>
+      <view class="card-body">
+        <view class="card-title-row">
+          <text class="card-name">{{item.name}}</text>
+          <switch
+            class="avail-switch"
+            checked="{{item.is_available}}"
+            color="#07c160"
+            data-id="{{item.dish_id}}"
+            bindchange="onToggleAvailable"
+          />
+        </view>
+        <view class="card-tags" wx:if="{{item.tags.length > 0}}">
+          <text class="card-tag" wx:for="{{item.tags}}" wx:for-item="tag" wx:key="*this">{{tag}}</text>
+        </view>
+        <text class="card-desc" wx:if="{{item.description}}">{{item.description}}</text>
+        <text class="card-ingredients" wx:if="{{item.ingredients.length > 0}}">{{ingredientsText(item.ingredients)}}</text>
+        <view class="card-actions">
+          <text class="card-action" data-id="{{item.dish_id}}" bindtap="onEditDish">编辑</text>
+          <text class="card-action danger" data-id="{{item.dish_id}}" bindtap="onDeleteDish">删除</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 小图视图 -->
+  <view wx:elif="{{viewMode === 'row'}}">
+    <view class="row" wx:for="{{filtered}}" wx:key="dish_id">
+      <image class="row-img" src="{{item.image}}" mode="aspectFill" wx:if="{{item.image}}" />
+      <view class="row-img row-img-empty" wx:else>
+        <text class="row-img-text">{{item.name[0]}}</text>
+      </view>
+      <view class="row-body" data-id="{{item.dish_id}}" bindtap="onEditDish">
+        <view class="row-title">
+          <text class="row-name">{{item.name}}</text>
+          <text class="row-off" wx:if="{{!item.is_available}}">已下架</text>
+        </view>
+        <text class="row-ingredients">{{ingredientsText(item.ingredients)}}</text>
+      </view>
+      <switch
+        class="avail-switch"
+        checked="{{item.is_available}}"
+        color="#07c160"
+        data-id="{{item.dish_id}}"
+        bindchange="onToggleAvailable"
+      />
+    </view>
+  </view>
+
+  <!-- 极简视图 -->
+  <view wx:else>
+    <view class="minimal" wx:for="{{filtered}}" wx:key="dish_id">
+      <text class="minimal-name {{!item.is_available ? 'off' : ''}}">{{item.name}}</text>
+      <text class="minimal-tags" wx:if="{{item.tags.length > 0}}">{{tagsText(item.tags)}}</text>
+      <switch
+        class="minimal-switch"
+        checked="{{item.is_available}}"
+        color="#07c160"
+        data-id="{{item.dish_id}}"
+        bindchange="onToggleAvailable"
+      />
+      <view class="minimal-actions">
+        <text class="card-action" data-id="{{item.dish_id}}" bindtap="onEditDish">编辑</text>
+        <text class="card-action danger" data-id="{{item.dish_id}}" bindtap="onDeleteDish">删除</text>
+      </view>
+    </view>
+  </view>
+</view>
