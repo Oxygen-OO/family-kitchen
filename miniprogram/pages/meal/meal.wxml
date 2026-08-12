@@ -34,6 +34,14 @@
     </view>
   </view>
 
+  <!-- 进行中: 任意成员可提前截止(服务端校验家庭成员, 与自动截止同一关闭管线) -->
+  <view class="section" wx:if="{{canOrder}}">
+    <view class="close-early-row">
+      <text class="close-early-hint">全部点选确认完毕后可以提前截止，定案不可重开</text>
+      <view class="close-early-btn" bindtap="onCloseEarly">提前截止</view>
+    </view>
+  </view>
+
   <!-- 我的点选 -->
   <view class="section" wx:if="{{myOrder && myOrder.dishes.length > 0}}">
     <view class="section-title">

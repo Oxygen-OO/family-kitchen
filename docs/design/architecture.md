@@ -28,6 +28,8 @@
 
 **MVP 用一个云函数** `family-kitchen`：微信云开发允许同一函数挂多个定时触发器，cron 触发的 event 与客户端 action 都进 `index.js`，按 action 分派——零共享代码问题、零冷启动差异。未来拆分时只换壳文件与触发器配置，lib 原封不动。cron：每 5 分钟一次截止扫描（表达式 `0 */5 * * * * *`，7 段含秒）。
 
+定时触发器的配置位置：仓库根 `cloudbaserc.json`（T8 新建，`family-kitchen` 挂 `meal-scan-due` 定时器），部署时以 CloudBase CLI（`tcb fn deploy`）下发；也可在微信开发者工具云开发控制台「云函数 → 定时触发」里等效配置（两者择一，勿重复挂载同名触发）。cron 触发的 event 无用户 openid，入口壳以 `SYSTEM_ACTIONS` 白名单跳过 openid 解析后路由到 `scanDue`。
+
 ## 数据模型（云数据库集合）
 
 主键约定：`meals` 用派生复合 ID（`familyId:date:slot`）保证 日期×slot 唯一；其余集合用随机 `_id`，唯一性经查询+业务校验保证（成员上限类不变量由引擎把守）。

@@ -659,7 +659,7 @@ test('placeOrder: 不存在/别家菜品 → DISH_UNKNOWN 致命, 不产生写�
   assert.equal(await store.getOrder(`fam-main:${TODAY}:breakfast`, 'openid-mama'), null)
 })
 
-test('placeOrder: 撞 deadline(恰等与已过) → PAST_CUTOFF, 不产生写入', async () => {
+test('placeOrder: 撞 deadline(恰等与已过) → 先代截止(PAST_CUTOFF), 后再写落 MEAL_LOCKED, 不产生写入', async () => {
   const { store, engine } = make()
   seedFamily(store)
   const soon = FIXED_NOW + 3600_000
@@ -670,17 +670,18 @@ test('placeOrder: 撞 deadline(恰等与已过) → PAST_CUTOFF, 不产生写入
     () => engine.placeOrder(
       `fam-main:${TODAY}:breakfast`, 'openid-mama',
       { dishes: [{ dishId: 'dish-tomato', quantity: 1 }] },
-      { nickname: '妈妈', now: soon } // 恰等于 deadline
+      { nickname: '妈妈', now: soon } // 恰等于 deadline: T8 代截止后落 PAST_CUTOFF
     ),
     (err) => err.code === 'PAST_CUTOFF'
   )
+  assert.equal((await store.getMeal(`fam-main:${TODAY}:breakfast`)).status, 'closed', '代截止已铺开')
   await assert.rejects(
     () => engine.placeOrder(
       `fam-main:${TODAY}:breakfast`, 'openid-mama',
       { dishes: [{ dishId: 'dish-tomato', quantity: 1 }] },
       { nickname: '妈妈', now: soon + 1 }
     ),
-    (err) => err.code === 'PAST_CUTOFF'
+    (err) => err.code === 'MEAL_LOCKED' // 已 closed(非本次代截止) → MEAL_LOCKED
   )
   assert.equal(await store.getOrder(`fam-main:${TODAY}:breakfast`, 'openid-mama'), null)
   // 截止只拒绝写: 读视图仍可用(经固定时钟的引擎)

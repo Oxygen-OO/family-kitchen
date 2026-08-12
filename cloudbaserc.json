@@ -1,0 +1,16 @@
+{
+  "envId": "{{envId}}",
+  "functionRoot": "cloudfunctions",
+  "functions": [
+    {
+      "name": "family-kitchen",
+      "triggers": [
+        {
+          "name": "meal-scan-due",
+          "type": "timer",
+          "config": "0 */5 * * * * *"
+        }
+      ]
+    }
+  ]
+}

@@ -203,7 +203,7 @@ Page({
       }
     } catch (err) {
       if (err.code === 'PAST_CUTOFF' || err.code === 'MEAL_LOCKED') {
-        // 提交瞬间到点/已锁: 刷新按只读展示
+        // 提交瞬间到点(代截止)/已锁: 刷新按只读展示
         this.setData({ panelOpen: false })
         await this.load()
       }
@@ -211,6 +211,30 @@ Page({
     } finally {
       this.setData({ submitting: false })
     }
+  },
+
+  // ── 手动提前截止: 任何成员可触发, 服务端校验家庭成员; 走与自动截止相同的关闭管线 ──
+  onCloseEarly() {
+    const success = async (res) => {
+      if (!res.confirm) return
+      try {
+        const view = await api.closeEarly(this.mealId)
+        this.applyView(view)
+        wx.showToast({ title: '已截止，点选锁定', icon: 'success' })
+      } catch (err) {
+        if (err.code === 'NOT_ONGOING') {
+          // 已被截止(自己这单赢 或 他人抢先): 刷新按只读展示
+          await this.load()
+        }
+        wx.showToast({ title: err.message || '操作失败', icon: 'none' })
+      }
+    }
+    wx.showModal({
+      title: '提前截止',
+      content: '截止后所有成员的点选将锁定，且不可重新开启。确定提前截止吗？',
+      confirmColor: '#fa5151',
+      success,
+    })
   },
 
   notifyDropped(dropped) {

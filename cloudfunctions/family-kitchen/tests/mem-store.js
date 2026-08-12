@@ -10,6 +10,10 @@
 // listDishes 按 family_id+is_deleted 过滤、created_at 降序;
 // findOrderRefs 扫描 meals(同家庭+同日期+ongoing/closed) 与 orders(dishes.dish_id 命中),
 // meals/orders 为空或不存在即返回空数组(生产端对缺失集合同样折叠为空, 双胞胎天然空)。
+// 餐次关闭: claimClose 忠实复刻「条件更新」语义 —— 仅当文档存在 ∧ status='ongoing' ∧
+// (requireDue 时 deadline<=now) 才置 closed+closed_at 返回 {updated:1}, 任一条件不满足返回
+// {updated:0}(生产端 where().update 的 stats.updated, 不抛错), 故「同一餐次重复抢占一定是 stale」;
+// findDueMeals 按 status='ongoing' ∧ deadline<=now 过滤; updateMeal 未命中抛 NOT_FOUND(同 users/families)。
 
 function createMemStore() {
   const collections = new Map()
@@ -118,6 +122,27 @@ function createMemStore() {
       if (meals.has(doc._id)) return Promise.reject(dupError(doc._id))
       meals.set(doc._id, { ...doc })
       return { ...meals.get(doc._id) }
+    },
+    async updateMeal(mealId, patch) {
+      const meals = col('meals')
+      if (!meals.has(mealId)) return Promise.reject(nfError('meals', mealId))
+      const merged = { ...meals.get(mealId), ...patch }
+      meals.set(mealId, merged)
+      return { ...merged }
+    },
+    // claimClose: 条件更新语义(见文件头注释) —— stale/不满足条件一律 {updated:0}
+    async claimClose(mealId, { now, requireDue } = {}) {
+      const meals = col('meals')
+      const doc = meals.get(mealId)
+      if (!doc || doc.status !== 'ongoing') return { updated: 0 }
+      if (requireDue && !(doc.deadline <= now)) return { updated: 0 }
+      meals.set(mealId, { ...doc, status: 'closed', closed_at: now })
+      return { updated: 1 }
+    },
+    async findDueMeals(now) {
+      return [...col('meals').values()]
+        .filter((m) => m.status === 'ongoing' && m.deadline <= now)
+        .map((m) => ({ ...m }))
     },
     async getOrder(mealId, openid) {
       const doc = col('orders').get(`${mealId}:${openid}`)

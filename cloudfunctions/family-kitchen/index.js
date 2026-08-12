@@ -94,6 +94,9 @@ const actions = {
       { nickname: user.nickname, now: Date.now() }
     )
   },
+  closeEarly: (event) => meal.closeEarly(event.mealId, event.__openid, { now: Date.now() }),
+  // cron 定时触发器 action(架构见 architecture.md 部署形态): event 仅含 action, 无 openid
+  scanDue: () => meal.scanDue(),
 }
 
 function openidOf() {
@@ -108,12 +111,15 @@ function openidOf() {
   return openid
 }
 
+// 系统 action（cron 定时触发器）无用户上下文：getWXContext 的 OPENID 为空, 不能走 openidOf。
+const SYSTEM_ACTIONS = ['scanDue']
+
 exports.main = async (event) => {
   const action = event && event.action
   const fn = actions[action]
   if (!fn) return { ok: false, error: { code: 'ACTION_NOT_FOUND', message: `未知 action: ${action}` } }
   try {
-    const data = await fn({ ...event, __openid: openidOf() })
+    const data = await fn({ ...event, __openid: SYSTEM_ACTIONS.includes(action) ? null : openidOf() })
     return { ok: true, data }
   } catch (err) {
     const code = err && err.code ? err.code : 'INTERNAL'

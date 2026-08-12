@@ -75,6 +75,27 @@
   color: #888;
 }
 
+.close-early-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.close-early-hint {
+  font-size: 24rpx;
+  color: #888;
+  flex: 1;
+}
+
+.close-early-btn {
+  font-size: 26rpx;
+  color: #fa5151;
+  border: 1rpx solid #fa5151;
+  border-radius: 28rpx;
+  padding: 10rpx 32rpx;
+}
+
 .section {
   background: #fff;
   border-radius: 20rpx;

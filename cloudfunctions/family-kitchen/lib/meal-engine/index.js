@@ -2,7 +2,7 @@
 
 const { buildSummary } = require('../summarizer/index.js')
 
-// MealEngine：餐次引擎核心（发起/单路径查看/下单全量替换）。
+// MealEngine：餐次引擎核心（发起/单路径查看/下单全量替换/截止管线）。
 // 零 SDK、零 I/O，Store port + Clock 注入。契约见 docs/design/meal-engine.md。
 // meals/orders/subscribes 集合归本引擎独占写入（T6 只碰前两者，subscribes 为 T9 领地）。
 const SLOTS = ['breakfast', 'lunch', 'dinner']
@@ -13,14 +13,15 @@ const MEAL_ONGOING = 'ongoing'
 /**
  * @param {{
  *   getFamily: Function, listFamilyMembers: Function,
- *   getMeal: Function, createMeal: Function,
+ *   getMeal: Function, createMeal: Function, updateMeal: Function,
+ *   claimClose: Function, findDueMeals: Function,
  *   getDish: Function, listDishes: Function,
  *   getOrder: Function, upsertOrder: Function, deleteOrder: Function, listOrders: Function,
  * }} store
  * @param {{now: Function}} clock 固定时钟注入点（生产 = Date.now）
  */
 function createMealEngine(store, clock = { now: () => Date.now() }) {
-  return { initiate, viewMeal, placeOrder }
+  return { initiate, viewMeal, placeOrder, closeEarly, scanDue }
 
   // ── 发起: (family_id, date, slot) 唯一场; 同键已存在任何状态 → MEAL_EXISTS(命令集无 reopen) ──
   async function initiate({ familyId, date, slot }, openid, { deadline, now } = {}) {
@@ -65,12 +66,13 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
   // nickname 由入口壳经 users 档案解析(下单即快照, 引擎不查 users)
   async function placeOrder(mealId, openid, { dishes, note } = {}, { nickname, now } = {}) {
     const at = now == null ? clock.now() : now
-    const { meal } = await openMeal(store, mealId, openid)
-    // 写命令先跑 close-if-due（T8 钩子，见下）
-    const { closed } = await closeIfDue(store, meal, at)
-    if (closed) throw domainError('PAST_CUTOFF', '该餐次已截止，无法下单')
+    const opened = await openMeal(store, mealId, openid)
+    // 写命令先跑 close-if-due（T8）: ongoing ∧ now>=deadline → 代截止(claimClose 赢家),
+    // 赢家本次命令落 PAST_CUTOFF; 已 closed/prepared(含抢占输家) → MEAL_LOCKED。
+    const guard = await closeIfDue(store, opened.meal, at)
+    if (guard.closed) throw domainError('PAST_CUTOFF', '该餐次已截止，无法下单')
+    const meal = guard.meal
     if (meal.status !== MEAL_ONGOING) throw domainError('MEAL_LOCKED', '该餐次已锁定，无法修改点选')
-    if (at >= meal.deadline) throw domainError('PAST_CUTOFF', '已过截止时间，无法下单')
 
     if (dishes == null || !Array.isArray(dishes)) {
       throw domainError('DISHES_INVALID', 'dishes 须为数组')
@@ -101,15 +103,62 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
     await store.upsertOrder(orderDoc)
     return buildView(store, meal, openid, { dropped, now: at })
   }
-}
 
-// ── 到期最小守卫（T8 钩子）──
-// T8 将在此实现关闭管线: claimClose 原子抢占(条件更新 where {_id, status:'ongoing', deadline<=now})
-// → 物化 buildSummary 快照 → 订阅授权消费(见 meal-engine.md「关闭管线」)。T6 不做自动截止,
-// 一律返回 {closed:false}, 由调用方按 now>=deadline 落 PAST_CUTOFF —— 本函数是 T8 的唯一改动点,
-// T8 落地后即可期语义: 代截止后 closed=true → 本次命令落 PAST_CUTOFF, 其余判定天然成立。
-async function closeIfDue(store, meal, now) {
-  return { meal, closed: false }
+  // ── 关闭管线（内部单点: closeIfDue/closeEarly/scanDue 共用, 手动与自动同一实现）──
+  // 拒绝码以锁定文档 meal-engine.md 为准: 本守卫当场代截止(赢家) → 调用方落 PAST_CUTOFF;
+  // 已 closed/prepared(含抢占输家) → MEAL_LOCKED。issue #8 AC 写 MEAL_CLOSED 与文档不一致,
+  // 文档优先, 引擎不产生 MEAL_CLOSED 码(差异说明见 meal-engine.md 错误模式, 先例: T6 DISH_REMOVED)。
+  // T9 届时在管线尾部补订阅授权消费(此处只留钩子语义: 物化后 closed_at 已可判定)。
+  async function closePipeline(store, mealId, now, requireDue) {
+    const { updated } = await store.claimClose(mealId, { now, requireDue })
+    const meal = await store.getMeal(mealId)
+    if (updated !== 1) return { won: false, meal }
+    // 赢家: 读全量订单 → buildSummary(全量传参含软删) → 写 meals.summary 物化快照
+    // (崩溃窗口下 summary 缺失 → 前端容错空清单, 见 meal-engine.md)
+    const [orders, dishPool] = await Promise.all([store.listOrders(mealId), allDishes(store, meal.family_id)])
+    const summary = buildSummary(orders, dishPool, now)
+    await store.updateMeal(mealId, { summary })
+    return { won: true, meal: { ...meal, summary } }
+  }
+
+  // ── 到期守卫（T8）: 写命令前置 —— ongoing ∧ now>=deadline 时先代截止再按真实状态判定 ──
+  // 无论是否代截止都重读 meal 返回真实状态(守护「按关闭后的真实状态判定」: 读后-判定前
+  // 若有并发 closeEarly 抢先, 本守卫看到 closed 而不是陈旧 ongoing); 返回
+  // {meal: 当前真实状态, closed: 本次是否由本守卫代截止}(输家 closed=false, 调用方落 MEAL_LOCKED)。
+  async function closeIfDue(store, meal, now) {
+    if (meal.status !== MEAL_ONGOING || now < meal.deadline) {
+      const fresh = await store.getMeal(meal._id)
+      return { meal: fresh, closed: false }
+    }
+    const { won, meal: fresh } = await closePipeline(store, meal._id, now, true)
+    return { meal: fresh, closed: won }
+  }
+
+  // ── 手动提前截止: 与自动截止走完全相同的关闭管线(requireDue=false, 不受 deadline 约束) ──
+  // 家庭守卫后仅 ongoing 可触发; 抢占输家(他人抢先关了)同样落 NOT_ONGOING, 与直接关过的餐次同码。
+  async function closeEarly(mealId, openid, { now } = {}) {
+    const at = now == null ? clock.now() : now
+    const { meal } = await openMeal(store, mealId, openid)
+    if (meal.status !== MEAL_ONGOING) throw domainError('NOT_ONGOING', '仅进行中的餐次可提前截止')
+    const { won, meal: closed } = await closePipeline(store, mealId, at, false)
+    if (!won) throw domainError('NOT_ONGOING', '该餐次刚被其他成员截止')
+    return buildView(store, closed, openid, { now: at })
+  }
+
+  // ── cron 扫描: 无参幂等, 到期(ongoing ∧ deadline<=now)逐个走关闭管线 ──
+  // closed = 本趟赢家数; skipped = 读到但抢占失败数(并发下只有先手赢, 输家不物化)。
+  async function scanDue() {
+    const now = clock.now()
+    const due = await store.findDueMeals(now)
+    let closed = 0
+    let skipped = 0
+    for (const row of due) {
+      const { won } = await closePipeline(store, row._id, now, true)
+      if (won) closed += 1
+      else skipped += 1
+    }
+    return { closed, skipped }
+  }
 }
 
 // ── 菜品解析: 归属校验为致命(DISH_UNKNOWN); 下架/软删为过滤(非致命, 随视图 dropped 返回) ──
@@ -145,10 +194,7 @@ async function resolveDishes(store, meal, rawDishes) {
 async function buildView(store, meal, openid, { dropped = [], now } = {}) {
   const at = now == null ? Date.now() : now
   const familyId = meal.family_id
-  const [activeRows, removedRows] = await Promise.all([
-    store.listDishes(familyId, false),
-    store.listDishes(familyId, true),
-  ])
+  const activeRows = await store.listDishes(familyId, false)
   const menu = activeRows
     .filter((d) => d.is_available)
     .map((d) => ({
@@ -169,7 +215,7 @@ async function buildView(store, meal, openid, { dropped = [], now } = {}) {
   if (meal.status === MEAL_ONGOING) {
     // 实时预览: 全量传参(含软删)调 buildSummary, 只算不物化
     const orders = await store.listOrders(meal._id)
-    live = buildSummary(orders, activeRows.concat(removedRows), now)
+    live = buildSummary(orders, await allDishes(store, familyId), now)
   } else {
     // closed/prepared: 读 meals.summary 物化快照; 崩溃窗口缺失 → null, 前端容错空清单
     live = meal.summary || null
@@ -209,6 +255,15 @@ async function openMeal(store, mealId, openid) {
   if (!meal) throw domainError('MEAL_NOT_FOUND', '餐次不存在')
   await guardFamily(store, meal.family_id, openid)
   return { meal }
+}
+
+// 该家庭全量菜品池(含软删): 汇总器「全量传入」契约(见 prep-summarizer.md)——预览与物化共用
+async function allDishes(store, familyId) {
+  const [activeRows, removedRows] = await Promise.all([
+    store.listDishes(familyId, false),
+    store.listDishes(familyId, true),
+  ])
+  return activeRows.concat(removedRows)
 }
 
 function deadlineOf(slot, date) {

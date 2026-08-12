@@ -50,6 +50,7 @@ const api = {
   initiate: (familyId, slot, { date, deadline } = {}) => call('initiate', { familyId, slot, date, deadline }),
   viewMeal: (mealId) => call('viewMeal', { mealId }),
   placeOrder: (mealId, dishes, note) => call('placeOrder', { mealId, dishes, note }),
+  closeEarly: (mealId) => call('closeEarly', { mealId }),
 }
 
 function initCloud() {

@@ -195,9 +195,12 @@ function createDishStore(db) {
 // meals._id = familyId:date:slot(日期×slot 唯一由 ID 空间天然保证, add 撞键即 MEAL_EXISTS 素材);
 // orders._id = mealId:openid(每人每餐一单的原子 upsert, doc().set 建/替同语义)。
 // families/family_members/dishes 只读(家庭守卫与菜品校验)。
+// 关闭管线靠 claimClose 条件更新的原子性裁决胜负: where {_id, status:'ongoing', [+deadline<=now]}
+// → update {status:'closed'}, stats.updated===1 才执行后续物化(不用中间态, 无双写窗口)。
 function createMealStore(db) {
   const meals = db.collection('meals')
   const orders = db.collection('orders')
+  const _ = db.command
 
   return {
     getFamily: (familyId) => getFamily(db, familyId),
@@ -220,6 +223,29 @@ function createMealStore(db) {
         throw err
       }
       return doc
+    },
+    updateMeal: async (mealId, patch) => {
+      const res = await meals.doc(mealId).update({ data: patch })
+      const updated = res && res.stats && res.stats.updated
+      if (!updated) {
+        const nf = new Error(`meals ${mealId} not found`)
+        nf.code = 'NOT_FOUND'
+        throw nf
+      }
+      return unpack(await meals.doc(mealId).get())
+    },
+    // 原子抢占(胜负唯一裁决点): 未命中/非 ongoing/(requireDue 时)未到期 → stats.updated=0, 不抛错
+    claimClose: async (mealId, { now, requireDue }) => {
+      const cond = { _id: mealId, status: 'ongoing' }
+      if (requireDue) cond.deadline = _.lte(now)
+      const res = await meals.where(cond).update({ data: { status: 'closed', closed_at: now } })
+      return { updated: (res && res.stats && res.stats.updated) || 0 }
+    },
+    findDueMeals: async (now) => {
+      const rows = await collectionOrEmpty(
+        meals.where({ status: 'ongoing', deadline: _.lte(now) }).limit(1000)
+      )
+      return rows.map((row) => ({ ...row }))
     },
     getOrder: async (mealId, openid) => {
       try {
