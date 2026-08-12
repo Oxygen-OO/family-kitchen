@@ -9,6 +9,10 @@ const SLOTS = ['breakfast', 'lunch', 'dinner']
 // 缺省截止: 早餐 08:00 / 午餐 11:30 / 晚餐 17:30(当日, 服务器本地时区)
 const DEFAULT_DEADLINES = { breakfast: '08:00', lunch: '11:30', dinner: '17:30' }
 const MEAL_ONGOING = 'ongoing'
+// 订阅消息文案(与 miniprogram/pages/meal 的 SLOT_LABELS 同源)
+const SLOT_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' }
+// 缺省 notifier: 未注入时消费段按失败折叠处理(不发送、不重试) —— 生产入口壳恒注入适配器
+const NOOP_NOTIFIER = { send: async () => ({ ok: false, skipped: 'no_notifier' }) }
 
 /**
  * @param {{
@@ -17,10 +21,13 @@ const MEAL_ONGOING = 'ongoing'
  *   claimClose: Function, findDueMeals: Function,
  *   getDish: Function, listDishes: Function,
  *   getOrder: Function, upsertOrder: Function, deleteOrder: Function, listOrders: Function,
+ *   getSubscribe: Function, addSubscribe: Function, updateSubscribe: Function,
+ *   claimGrant: Function, listSubscribes: Function,
  * }} store
  * @param {{now: Function}} clock 固定时钟注入点（生产 = Date.now）
+ * @param {{send: Function}} notifier 订阅消息发送 port（生产 = lib/ports/notifier 适配器, 测试 = Spy）
  */
-function createMealEngine(store, clock = { now: () => Date.now() }) {
+function createMealEngine(store, clock = { now: () => Date.now() }, notifier = NOOP_NOTIFIER) {
   return { initiate, viewMeal, placeOrder, closeEarly, scanDue }
 
   // ── 发起: (family_id, date, slot) 唯一场; 同键已存在任何状态 → MEAL_EXISTS(命令集无 reopen) ──
@@ -61,10 +68,11 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
     return buildView(store, meal, openid, { now: clock.now() })
   }
 
-  // placeOrder(mealId, openid, {dishes, note, subscribed?}, {nickname, now}):
-  // subscribed 属 T9 授权领地的入参, T6 只透传不消费(入口壳不传即无感);
+  // placeOrder(mealId, openid, {dishes, note, subscribed?}, {nickname, now, templateId?}):
+  // subscribed 属 T9 授权领地: 布尔表示本次提交的订阅授权结果(undefined=旧调用方, 不记账);
+  // templateId 由入口壳注入服务端配置的模板 ID(绝不信任客户端, 记账与发送同源);
   // nickname 由入口壳经 users 档案解析(下单即快照, 引擎不查 users)
-  async function placeOrder(mealId, openid, { dishes, note } = {}, { nickname, now } = {}) {
+  async function placeOrder(mealId, openid, { dishes, note, subscribed } = {}, { nickname, now, templateId } = {}) {
     const at = now == null ? clock.now() : now
     const opened = await openMeal(store, mealId, openid)
     // 写命令先跑 close-if-due（T8）: ongoing ∧ now>=deadline → 代截止(claimClose 赢家),
@@ -101,6 +109,11 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
       created_at: at,
     }
     await store.upsertOrder(orderDoc)
+    // 授权记账(折叠): 仅布尔显式结果才落库(undefined 即旧调用方无感);
+    // 撞 _id 即「每人每餐只记一条」的原子折叠 —— 已存在(不论 granted 真伪)绝不覆盖
+    if (typeof subscribed === 'boolean') {
+      await recordSubscribe(store, mealId, openid, { granted: subscribed, templateId, now: at })
+    }
     return buildView(store, meal, openid, { dropped, now: at })
   }
 
@@ -108,7 +121,6 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
   // 拒绝码以锁定文档 meal-engine.md 为准: 本守卫当场代截止(赢家) → 调用方落 PAST_CUTOFF;
   // 已 closed/prepared(含抢占输家) → MEAL_LOCKED。issue #8 AC 写 MEAL_CLOSED 与文档不一致,
   // 文档优先, 引擎不产生 MEAL_CLOSED 码(差异说明见 meal-engine.md 错误模式, 先例: T6 DISH_REMOVED)。
-  // T9 届时在管线尾部补订阅授权消费(此处只留钩子语义: 物化后 closed_at 已可判定)。
   async function closePipeline(store, mealId, now, requireDue) {
     const { updated } = await store.claimClose(mealId, { now, requireDue })
     const meal = await store.getMeal(mealId)
@@ -118,6 +130,9 @@ function createMealEngine(store, clock = { now: () => Date.now() }) {
     const [orders, dishPool] = await Promise.all([store.listOrders(mealId), allDishes(store, meal.family_id)])
     const summary = buildSummary(orders, dishPool, now)
     await store.updateMeal(mealId, { summary })
+    // T9 消费段(见 meal-engine.md 关闭管线): 物化后逐条 granted 且未 consumed 的记录,
+    // claimGrant 原子抢占(输家跳过) → Notifier.send → 成功才置 sent; 失败不重试、不阻塞
+    await consumeSubscribes(store, notifier, { ...meal, summary }, now)
     return { won: true, meal: { ...meal, summary } }
   }
 
@@ -190,6 +205,82 @@ async function resolveDishes(store, meal, rawDishes) {
   return { kept, dropped }
 }
 
+// ── 订阅授权记账(折叠): 每人每餐至多一条, 以先到者为准, 不可覆盖 ──
+// 原子性靠派生 _id(mealId:openid) 撞键裁决, 不做查-读-写两步(并发下单也只会落一条);
+// 折叠语义(见 ADR-0002): 已存在记录无论 granted 真伪都原样保留 —— 已授权不被降级
+// (不再覆盖 granted=false), 已拒绝也不因后来点头而反转(漏授权不再补发)。
+async function recordSubscribe(store, mealId, openid, { granted, templateId, now }) {
+  try {
+    await store.addSubscribe({
+      _id: `${mealId}:${openid}`,
+      meal_id: mealId,
+      user_openid: openid,
+      template_id: templateId || '',
+      granted,
+      granted_at: now,
+      consumed: false,
+      sent: false,
+    })
+  } catch (err) {
+    if (err && err.code === 'DUPLICATE_KEY') return // 已存在 → 折叠, 不覆盖任何字段
+    throw err
+  }
+}
+
+// ── 订阅消费(at-most-once): 截止赢家遍历 granted ∧ 未 consumed 记录逐个发送 ──
+// 语义(ADR-0002「宁丢勿重」+ issue #9 AC):
+//   1. claimGrant 条件更新抢占(consumed=false→true) —— 输家直接跳过, 发送只由赢家做;
+//   2. notifier.send 按记录自身 template_id(授权时记账的模板, 与客户端授权同源);
+//   3. 只有 send 返回 ok 才置 sent:true + sent_at; 失败/未配置/异常一律原样留下
+//      (consumed=true, sent=false) 不重试 —— 宁可漏发也不重复打扰;
+//   4. 恒不阻塞截止: 任何发送失败都不向上抛(记录已 consumed, 下轮扫描零残留)。
+// 消息内容契约(模板字段映射见 config 部署说明): data = {thing1: 家庭名称, thing2: 餐次文案+已截止,
+// thing3: 备餐清单摘要}; page 直达餐次页。微信 thing 字段上限 20 字符(超长发送报 47001),
+// 名称与摘要统一 capText 截断兜底。
+async function consumeSubscribes(store, notifier, meal, now) {
+  const family = await store.getFamily(meal.family_id)
+  const familyName = capText((family && family.name) || '', 20)
+  const pending = await store.listSubscribes(meal._id, { granted: true, consumed: false })
+  for (const row of pending) {
+    const { updated } = await store.claimGrant(meal._id, row.user_openid, now)
+    if (updated !== 1) continue // 抢占输家: 他人已在发送/已发送, 本路径不做任何事
+    let result
+    try {
+      result = await notifier.send({
+        openid: row.user_openid,
+        templateId: row.template_id,
+        page: `pages/meal/meal?mealId=${meal._id}`,
+        data: {
+          thing1: familyName,
+          thing2: `${SLOT_LABELS[meal.slot] || meal.slot}已截止`,
+          thing3: summaryText(meal.summary),
+        },
+      })
+    } catch (err) {
+      // 适配器契约本该折叠不抛, 这里兜底: 异常等同失败, 不阻塞后续成员
+      result = { ok: false, message: err && err.message }
+    }
+    if (result && result.ok) {
+      await store.updateSubscribe(meal._id, row.user_openid, { sent: true, sent_at: now })
+    } else {
+      // 失败/未配置模板: 原样留下 + 适配器已记日志; 不自动重试(宁丢勿重)
+    }
+  }
+}
+
+// 备餐清单摘要: 物化快照 byDish 逐条「菜名 ×总数」, 无记录给兜底文案(崩溃窗口容错)
+function summaryText(summary) {
+  const rows = summary && Array.isArray(summary.byDish) ? summary.byDish : []
+  if (rows.length === 0) return '暂无备餐记录'
+  return capText(rows.map((r) => `${r.dishName} ×${r.totalQuantity}`).join('、'), 20)
+}
+
+// 微信订阅消息 thing 字段 20 字符上限的截断兜底(超长发送会被微信拒收 count 为失败)
+function capText(text, max) {
+  if (text == null || text.length <= max) return String(text == null ? '' : text)
+  return `${text.slice(0, max - 1)}…`
+}
+
 // ── 视图: initiate/viewMeal/placeOrder 共用同一构建(餐次页单路径) ──
 async function buildView(store, meal, openid, { dropped = [], now } = {}) {
   const at = now == null ? Date.now() : now
@@ -210,6 +301,10 @@ async function buildView(store, meal, openid, { dropped = [], now } = {}) {
     dishes: (orderDoc.dishes || []).map((d) => ({ dishId: d.dish_id, name: d.name, quantity: d.quantity })),
     note: orderDoc.note || '',
   }
+
+  // T9: 本餐当前用户订阅授权记录查询 —— 有记录(无论 granted 真伪)即 true,
+  // 前端据此只弹一次授权窗(granted:false 也折叠不再打扰, 见 ADR-0002)
+  const granted = !!(await store.getSubscribe(meal._id, openid))
 
   let live = null
   if (meal.status === MEAL_ONGOING) {
@@ -236,7 +331,7 @@ async function buildView(store, meal, openid, { dropped = [], now } = {}) {
     myOrder,
     live,
     canOrder: meal.status === MEAL_ONGOING && at < meal.deadline,
-    granted: false, // T9 钩子: 本餐当前用户订阅授权记录查询
+    granted,
     dropped,
   }
 }

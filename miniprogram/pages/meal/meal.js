@@ -1,6 +1,7 @@
 'use strict'
 
 const { api } = require('../../utils/api.js')
+const { SUBSCRIBE_TEMPLATE_ID } = require('../../config.js')
 
 const SLOT_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' }
 
@@ -25,6 +26,7 @@ Page({
     note: '',
     panelOpen: false,
     countdown: '',
+    granted: false,
   },
 
   onLoad(options) {
@@ -91,6 +93,7 @@ Page({
       live: view.live,
       dropped: view.dropped || [],
       note,
+      granted: view.granted,
       slotLabel: SLOT_LABELS[view.meal.slot] || view.meal.slot,
     })
     wx.setNavigationBarTitle({ title: `${this.data.slotLabel} · ${view.meal.date}` })
@@ -186,18 +189,46 @@ Page({
     this.setData({ note: e.detail.value })
   },
 
+  // ── 订阅授权(T9): 提交订单前先请求一次性订阅 —— 授权折叠由服务端记账保证只弹一次 ──
+  // 模板未配置(config.js 留空) → 不弹窗不记账(undefined); 本餐已有授权/拒绝记录 → 不再打扰(false);
+  // 弹窗结果 accept → true; deny/失败 → false(结果照实记账, 截止时不发; 后续也不再弹)。
+  // wx.requestSubscribeMessage 必须在用户点击同步触发链上调用(须为 tap 手势的直接响应)。
+  requestSubscribe() {
+    return new Promise((resolve) => {
+      if (!SUBSCRIBE_TEMPLATE_ID) {
+        resolve(undefined)
+        return
+      }
+      if (this.data.granted) {
+        resolve(false)
+        return
+      }
+      wx.requestSubscribeMessage({
+        tmplIds: [SUBSCRIBE_TEMPLATE_ID],
+        success: (res) => resolve(res[SUBSCRIBE_TEMPLATE_ID] === 'accept'),
+        fail: () => resolve(false),
+      })
+    })
+  },
+
   async onConfirm() {
     if (this.data.submitting) return
     const dishes = this.data.cart
       .filter((c) => c.quantity > 0)
       .map((c) => ({ dishId: c.dishId, quantity: c.quantity }))
     if (dishes.length === 0) return
+    // submitting 必须在同步段置位: 弹窗 await 前锁住重复点击(两次快按只弹一次授权窗)
     this.setData({ submitting: true })
+    const subscribed = await this.requestSubscribe()
     try {
-      const view = await api.placeOrder(this.mealId, dishes, this.data.note)
+      const view = await api.placeOrder(this.mealId, dishes, this.data.note, subscribed)
       this.applyView(view)
       this.setData({ panelOpen: false })
-      wx.showToast({ title: '点选已提交', icon: 'success' })
+      if (subscribed === true) {
+        wx.showToast({ title: '已订阅备餐提醒', icon: 'success' })
+      } else {
+        wx.showToast({ title: '点选已提交', icon: 'success' })
+      }
       if (view.dropped && view.dropped.length > 0) {
         this.notifyDropped(view.dropped)
       }

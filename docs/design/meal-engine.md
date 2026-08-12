@@ -16,7 +16,8 @@ interface MealEngine {
   placeOrder(mealId, openid, {dishes: {dishId, quantity}[], subscribed?: bool, note?}): MealView
     // 全量替换: 空数组 = 取消(删除该订单文档, 无 cancelled 态); 服务端校验下架/软删菜,
     // 过滤并返回 dropped(非致命); 下单即快照 dishName(user_nickname);
-    // subscribed=true 且本餐无授权记录时写 subscribes(granted 折叠, 每餐每人一次)
+    // subscribed 为布尔时写 subscribes 记账(折叠: 每人每餐至多一条, 以先到者为准, 不可覆盖);
+    // subscribed 缺省(旧调用方)不记账; 模板 ID 由入口壳注入服务端配置(绝不信任客户端)
   // ── 低频: 生命周期 ──
   initiate({familyId, date, slot}, openid, {deadline?}): MealView
     // 已存在(任何状态) → MEAL_EXISTS(不可重开); deadline 默认 早餐08:00/午餐11:30/晚餐17:30,
@@ -36,6 +37,7 @@ interface MealView {
   myOrder: {user_openid, user_nickname, dishes: {dishId, name, quantity}[], note} | null
   live?:   PrepSummary          // ongoing: 实时预览(只算不物化); closed/prepared: 读 meals.summary 快照
   canOrder, granted, dropped: {dishId, dishName}[]
+  // granted(T9): 本餐当前用户订阅记录是否已存在(授权或拒绝皆回显 true) —— 前端据此只弹一次授权窗
 }
 ```
 
@@ -69,13 +71,31 @@ closeIfDue / closeEarly / scanDue
      —— closeEarly(手动) 同条件但 deadline 不设上下界(未到期也允许提前关), 裁决依旧只靠 status 条件
   → 读全量 orders → buildSummary(orders, dishes) → 写 meals.summary (物化快照)
      (崩溃窗口下 summary 缺失 → 前端容错为空清单)
-  → 逐条 granted 且未 consumed 的 subscribes 记录: 条件更新 consumed=true 抢占 →
-     Notifier.send → 成功才置 sent=true; 失败不自动重试, 原样留下 + 日志   (T9 实现)
+  → 订阅消费 at-most-once (T9): 逐条 granted ∧ 未 consumed 的 subscribes 记录:
+     ① claimGrant 条件更新(consumed: false→true, 输家跳过, 与 claimClose 同一裁决模式)
+     ② notifier.send(内容: 家庭名称 / 餐次文案·早餐午餐晚餐+已截止 / 备餐清单摘要, page 直达餐次页;
+        模板 ID 用记录自身记账值, 数据字段映射见 config 部署说明;
+        thing 字段 20 字符上限, 名称与摘要超长自动截断兜底)
+     ③ 仅 send 返回 ok 才置 sent:true + sent_at; 失败/未配置/异常一律原样留下
+        (consumed=true, sent=false) 不自动重试 —— 宁丢勿重(ADR-0002), 恒不阻塞截止
 ```
 
-幂等性：claimClose 是单一裁决点——同餐次被扫两次、手动与 cron 竞态、scanDue 与 close-if-due 撞车，都只有一方执行管线，不会二次物化、二次发消息。输家（updated=0）直接跳过后续，由调用方按真实状态判定（写命令落 MEAL_LOCKED；closeEarly 输家与直接关过的餐次同码 NOT_ONGOING）。
+幂等性：claimClose 是单一裁决点——同餐次被扫两次、手动与 cron 竞态、scanDue 与 close-if-due 撞车，都只有一方执行管线，不会二次物化、二次发消息。输家（updated=0）直接跳过后续，由调用方按真实状态判定（写命令落 MEAL_LOCKED；closeEarly 输家与直接关过的餐次同码 NOT_ONGOING）。订阅消费的幂等同理：claimGrant 先到者赢，失败记录已被 consumed 抢占，后续任何扫描/关闭都不会重发——「漏发一条的成本远低于重复发送带来的投诉」。
 
-写命令守卫在管线后**重读** meal 再判定（`closeIfDue` 恒返回真实状态）：读后-判定前的并发 closeEarly 抢占窗口不会因陈旧 ongoing 放行 — 判定基于关闭后的真实状态，这是「先代截止再判定」语义的一部分。残留窗口只剩守卫重读与下单之间的亚毫秒 TOCTOU，与崩溃窗口一并按快照容忍（T10 前端容错）。
+授权记账（T9，placeOrder 内）：
+- `subscribed` 为布尔 → upsert subscribes（派生 `_id = mealId:openid`，每人每餐至多一条）。
+  撞键（已存在）即折叠：无论先到记录是 granted:true 还是 false 都原样保留——已授权不被
+  降级（后到 subscribed=false 不覆盖 granted），已拒绝也不因后来点头而反转（漏授权不再补发）。
+- 记账在订单写入成功后执行：若记账写失败（非撞键），命令整体报错但订单已落库——
+  重试幂等（订单 upsert 与折叠都无副作用），CloudBase 无事务，按此容忍（T8 崩溃窗口同一策略）。
+- `subscribed` 缺省（T6 旧调用方/取消单路径）→ 不产生订阅记录。
+- 记录字段：`meal_id, user_openid, template_id(服务端配置注入), granted: bool, granted_at,
+  consumed: bool, sent: bool, sent_at?`。
+- 前端弹窗折叠：wx.requestSubscribeMessage 只在「提交订单」动作且本餐无记录时调用一次；
+  view.granted 有记录（含拒绝）即不再打扰。
+- ⚠️ 未配置模板 ID 的授权记录：截止时同样被 claimGrant 抢占(consumed)后由适配器判
+  「未配置跳过+日志」——配额即失效且不补发(宁丢勿重)。上线前务必先申请模板 ID
+  (见 cloudfunctions/family-kitchen/config.js 部署说明)再正式运行。
 
 ## Cron 触发器
 
@@ -85,9 +105,9 @@ closeIfDue / closeEarly / scanDue
 
 | Port | 分类 | 生产 adapter | 测试 adapter |
 |---|---|---|---|
-| MealStore（families/family_members/meals/orders/dishes/subscribes） | remote-but-owned | wx-server-sdk（唯一 import 点） | 内存 Map 双胞胎，**忠实复刻条件更新语义** |
+| MealStore（families/family_members/meals/orders/dishes/subscribes） | remote-but-owned | wx-server-sdk（唯一 import 点） | 内存 Map 双胞胎，**忠实复刻条件更新语义**(claimGrant 同 claimClose) |
 | Clock | in-process 注入 | Date.now | Fixed(now) 冻结时间 |
-| Notifier（订阅消息发送） | true external | cloud.openapi.subscribeMessage.send | Spy：断言「每人恰一条、未授权零条、按 claim 顺序」 |
+| Notifier（订阅消息发送） | true external | lib/ports/notifier.js 适配器(注入 cloud.openapi.subscribeMessage.send; 模板 ID 走 config, 未配置 → 跳过+日志不发送) | Spy：断言「每人恰一条、未授权零条、按 claim 顺序」 |
 
 测试全部跨外部 seam：固定时钟的时序剧本（截止前改单、到期瞬间 placeOrder→PAST_CUTOFF、scanDue 补刀、复制过滤下架菜、summary 逐字段断言、grant 消费顺序）只看可观测结果。
 

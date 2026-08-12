@@ -41,7 +41,7 @@
 | `dishes` | 随机 | family_id, name, image?, description?, tags[], ingredients: [{name, amount}], is_available, is_deleted, created_by, created_at | 软删：`is_deleted: true`；**食材必为结构化 [{name, amount}]**（汇总器精确去重的输入契约） |
 | `meals` | `familyId:date:slot` | family_id, date, slot('breakfast'\|'lunch'\|'dinner'), status('ongoing'\|'closed'\|'prepared'), initiated_by, deadline, closed_at?, prepared_by?, prepared_at?, summary?: PrepSummary | 日期×slot 唯一由 ID 空间天然保证；summary 为截止时物化的备餐快照 |
 | `orders` | 随机 | meal_id, family_id, user_openid, user_nickname(快照), dishes: [{dish_id, name, quantity}]（name 快照）, note, created_at | 每人每餐一单（upsert）；**取消 = 删除文档**，不存在 cancelled 态；快照固化不回退 |
-| `subscribes` | 随机 | meal_id, user_openid, template_id, granted: bool, granted_at, consumed: bool, sent: bool | 一次性订阅配额记账：授权折叠（每人每餐只弹一次）、at-most-once 消费 |
+| `subscribes` | `mealId:openid` | meal_id, user_openid, template_id, granted: bool, granted_at, consumed: bool, sent: bool, sent_at? | 一次性订阅配额记账：授权折叠（每人每餐至多一条, 撞键即折叠不覆盖）、at-most-once 消费（claimGrant 先抢占后发送, 失败不重试） |
 | `users` | openid | openid, nickname, avatar, created_at | 2022 后微信不回传昵称，首登自填 |
 
 ## 模块清单

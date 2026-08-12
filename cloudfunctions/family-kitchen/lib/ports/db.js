@@ -191,15 +191,19 @@ function createDishStore(db) {
   }
 }
 
-// MealStore：meals/orders 集合归本引擎独占写入。派生 _id 语义:
+// MealStore：meals/orders/subscribes 集合归本引擎独占写入。派生 _id 语义:
 // meals._id = familyId:date:slot(日期×slot 唯一由 ID 空间天然保证, add 撞键即 MEAL_EXISTS 素材);
-// orders._id = mealId:openid(每人每餐一单的原子 upsert, doc().set 建/替同语义)。
+// orders._id = mealId:openid(每人每餐一单的原子 upsert, doc().set 建/替同语义);
+// subscribes._id = mealId:openid(每人每餐一条授权的原子折叠素材 —— add 撞键即折叠, 不覆盖旧值)。
 // families/family_members/dishes 只读(家庭守卫与菜品校验)。
 // 关闭管线靠 claimClose 条件更新的原子性裁决胜负: where {_id, status:'ongoing', [+deadline<=now]}
 // → update {status:'closed'}, stats.updated===1 才执行后续物化(不用中间态, 无双写窗口)。
+// 订阅消费靠 claimGrant 同构裁决: where {_id, consumed:false} → update {consumed:true},
+// stats.updated===1 才发送(at-most-once: 抢占发生在发送前, 失败不重试, 记录原样留下)。
 function createMealStore(db) {
   const meals = db.collection('meals')
   const orders = db.collection('orders')
+  const subscribes = db.collection('subscribes')
   const _ = db.command
 
   return {
@@ -271,6 +275,57 @@ function createMealStore(db) {
     listOrders: async (mealId) => {
       const rows = await collectionOrEmpty(
         orders.where({ meal_id: mealId }).limit(1000)
+      )
+      return rows.map((row) => ({ ...row }))
+    },
+    // ── 订阅授权记账与 at-most-once 消费 (T9) ──
+    getSubscribe: async (mealId, openid) => {
+      try {
+        return unpack(await subscribes.doc(`${mealId}:${openid}`).get())
+      } catch (err) {
+        if (isNotFound(err)) return null
+        throw err
+      }
+    },
+    // 授权折叠的原子性: add 带显式派生 _id, 撞键(已存在)由引擎捕 DUPLICATE_KEY 当作折叠,
+    // 不做「查-读-写」两步 —— 并发下同一用户同一餐次也只会产生一条记录, 旧值绝不覆盖。
+    addSubscribe: async (doc) => {
+      try {
+        await subscribes.add({ data: doc })
+      } catch (err) {
+        if (isDuplicate(err)) throw duplicateKeyError(doc._id)
+        throw err
+      }
+      return doc
+    },
+    updateSubscribe: async (mealId, openid, patch) => {
+      const id = `${mealId}:${openid}`
+      try {
+        await subscribes.doc(id).update({ data: patch })
+        return unpack(await subscribes.doc(id).get())
+      } catch (err) {
+        if (isNotFound(err)) {
+          const nf = new Error(`subscribes ${id} not found`)
+          nf.code = 'NOT_FOUND'
+          throw nf
+        }
+        throw err
+      }
+    },
+    // 原子抢占(消费胜负唯一裁决点): 未命中/已 consumed → stats.updated=0 不抛错;
+    // 先到者置 consumed+consumed_at —— 发送发生在抢占之后, 失败即丢弃(宁丢勿重)。
+    claimGrant: async (mealId, openid, now) => {
+      const res = await subscribes
+        .where({ _id: `${mealId}:${openid}`, consumed: false })
+        .update({ data: { consumed: true, consumed_at: now } })
+      return { updated: (res && res.stats && res.stats.updated) || 0 }
+    },
+    listSubscribes: async (mealId, { granted, consumed }) => {
+      const rows = await collectionOrEmpty(
+        subscribes
+          .where({ meal_id: mealId, granted, consumed })
+          .orderBy('granted_at', 'asc')
+          .limit(1000)
       )
       return rows.map((row) => ({ ...row }))
     },

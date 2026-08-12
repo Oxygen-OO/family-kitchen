@@ -162,6 +162,43 @@ function createMemStore() {
     async deleteOrder(mealId, openid) {
       col('orders').delete(`${mealId}:${openid}`)
     },
+    // 订阅记账(T9): 派生 _id=mealId:openid(每人每餐一条, 授权折叠的原子素材 ——
+    // 撞 _id 重复插入抛 DUPLICATE_KEY, 生产端 add 带显式 _id 同语义);
+    // claimGrant 忠实复刻「条件更新」: 仅当存在 ∧ consumed=false 才置 consumed+consumed_at
+    // 返回 {updated:1}, 任一条件不满足返回 {updated:0}(并发下重复抢占恒 stale);
+    // listSubscribes 按 granted/consumed 过滤 + granted_at 升序(先授权先发)。
+    async getSubscribe(mealId, openid) {
+      const doc = col('subscribes').get(`${mealId}:${openid}`)
+      return doc ? { ...doc } : null
+    },
+    async addSubscribe(doc) {
+      const subs = col('subscribes')
+      if (subs.has(doc._id)) return Promise.reject(dupError(doc._id))
+      subs.set(doc._id, { ...doc })
+      return { ...doc }
+    },
+    async updateSubscribe(mealId, openid, patch) {
+      const subs = col('subscribes')
+      const key = `${mealId}:${openid}`
+      if (!subs.has(key)) return Promise.reject(nfError('subscribes', key))
+      const merged = { ...subs.get(key), ...patch }
+      subs.set(key, merged)
+      return { ...merged }
+    },
+    async claimGrant(mealId, openid, now) {
+      const subs = col('subscribes')
+      const key = `${mealId}:${openid}`
+      const doc = subs.get(key)
+      if (!doc || doc.consumed) return { updated: 0 }
+      subs.set(key, { ...doc, consumed: true, consumed_at: now })
+      return { updated: 1 }
+    },
+    async listSubscribes(mealId, { granted, consumed } = {}) {
+      return [...col('subscribes').values()]
+        .filter((r) => r.meal_id === mealId && r.granted === granted && r.consumed === consumed)
+        .sort((a, b) => a.granted_at - b.granted_at)
+        .map((row) => ({ ...row }))
+    },
     _seedFamily(doc) {
       if (!doc._id) doc._id = 'family-' + (++familySeq)
       col('families').set(doc._id, { ...doc })
@@ -178,6 +215,9 @@ function createMemStore() {
     },
     _seedOrder(doc) {
       col('orders').set(doc._id, { ...doc })
+    },
+    _seedSubscribe(doc) {
+      col('subscribes').set(doc._id, { ...doc })
     },
   }
 }

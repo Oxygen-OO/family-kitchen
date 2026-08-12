@@ -9,13 +9,21 @@ const { createFamilyEngine } = require('./lib/family-engine/index.js')
 const { createDishEngine } = require('./lib/dish-engine/index.js')
 const { createMealEngine } = require('./lib/meal-engine/index.js')
 const { createIdentityStore, createFamilyStore, createDishStore, createMealStore } = require('./lib/ports/db.js')
+const { createSubscribeNotifier } = require('./lib/ports/notifier.js')
+const { SUBSCRIBE_TEMPLATE_ID } = require('./config.js')
 
 const db = cloud.database()
 const identityStore = createIdentityStore(db)
 const identity = createIdentityEngine(identityStore)
 const family = createFamilyEngine(createFamilyStore(db), { now: () => Date.now() })
 const dish = createDishEngine(createDishStore(db), { now: () => Date.now() })
-const meal = createMealEngine(createMealStore(db), { now: () => Date.now() })
+const meal = createMealEngine(
+  createMealStore(db),
+  { now: () => Date.now() },
+  // 订阅消息适配器: 全仓库唯一触碰 cloud.openapi.subscribeMessage 的地方;
+  // 模板 ID 走 config(未配置 → 跳过+日志, 见 config.js 部署说明)
+  createSubscribeNotifier({ send: cloud.openapi.subscribeMessage.send, log: console.log })
+)
 
 // 昵称一律取 users 档案（T1 查询能力），不信任客户端自称；顺带校验登录态
 async function userByOpenid(openid) {
@@ -90,8 +98,10 @@ const actions = {
     return meal.placeOrder(
       event.mealId,
       event.__openid,
-      { dishes: event.dishes, note: event.note },
-      { nickname: user.nickname, now: Date.now() }
+      // subscribed: 前端授权弹窗结果(布尔), T9 授权记账入参
+      { dishes: event.dishes, note: event.note, subscribed: event.subscribed },
+      // templateId: 服务端配置注入(绝不信任客户端传值, 记账与发送同源)
+      { nickname: user.nickname, now: Date.now(), templateId: SUBSCRIBE_TEMPLATE_ID }
     )
   },
   closeEarly: (event) => meal.closeEarly(event.mealId, event.__openid, { now: Date.now() }),
