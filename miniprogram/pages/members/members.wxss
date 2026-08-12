@@ -1,0 +1,129 @@
+.members {
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding: 32rpx;
+  box-sizing: border-box;
+}
+
+.family-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.family-name {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.family-count {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.member-list {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 8rpx 24rpx;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f2f3f5;
+}
+
+.member-item:last-child {
+  border-bottom: none;
+}
+
+.avatar {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  background: #e8f9ef;
+  color: #07c160;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.member-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.member-name {
+  font-size: 30rpx;
+  color: #333;
+}
+
+.member-role {
+  font-size: 20rpx;
+  color: #999;
+  border: 2rpx solid #e5e6eb;
+  border-radius: 20rpx;
+  padding: 4rpx 16rpx;
+}
+
+.member-role.creator {
+  color: #07c160;
+  border-color: #07c160;
+  background: #e8f9ef;
+}
+
+.joined-at {
+  font-size: 22rpx;
+  color: #bbb;
+  flex-shrink: 0;
+}
+
+.actions {
+  margin-top: 48rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.leave-hint {
+  font-size: 24rpx;
+  color: #999;
+  text-align: center;
+}
+
+.btn-transfer {
+  background: #fff;
+  color: #07c160;
+  border: 2rpx solid #07c160;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}
+
+.btn-dissolve {
+  background: #fff;
+  color: #fa5151;
+  border: 2rpx solid #fa5151;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}
+
+.btn-dissolve.armed {
+  background: #fa5151;
+  color: #fff;
+}
+
+.btn-leave {
+  background: #fff;
+  color: #fa5151;
+  border: 2rpx solid #fa5151;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}

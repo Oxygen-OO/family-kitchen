@@ -148,6 +148,37 @@ function createFamilyStore(db) {
       await familyMembers.add({ data: row })
       return row
     },
+    // 成员行读写(T3 生命周期): family_members 无唯一索引, 单行命中靠
+    // {family_id, user_openid} 双字段查询; 引擎守卫保证行存在, 双胞胎同语义
+    // (update 未命中抛 NOT_FOUND, delete 未命中幂等折叠 —— 生产 where().remove
+    // 对空集 removed=0 不报错, 与 deleteOrder 的先例一致)。
+    getFamilyMember: async (familyId, openid) => {
+      const res = await familyMembers.where({ family_id: familyId, user_openid: openid }).limit(1).get()
+      const row = res.data && res.data[0]
+      return row ? unpack(row) : null
+    },
+    updateFamilyMember: async (familyId, openid, patch) => {
+      const res = await familyMembers.where({ family_id: familyId, user_openid: openid }).update({ data: patch })
+      const updated = res && res.stats && res.stats.updated
+      if (!updated) {
+        const nf = new Error(`family_members ${familyId}:${openid} not found`)
+        nf.code = 'NOT_FOUND'
+        throw nf
+      }
+      const re = await familyMembers.where({ family_id: familyId, user_openid: openid }).limit(1).get()
+      const row = re.data && re.data[0]
+      return row ? unpack(row) : null
+    },
+    deleteFamilyMember: async (familyId, openid) => {
+      await familyMembers.where({ family_id: familyId, user_openid: openid }).remove()
+    },
+    // joined_at 升序: 立家者(先加入)居首, 成员管理页按此渲染
+    listMembersByFamily: async (familyId) => {
+      const rows = await collectionOrEmpty(
+        familyMembers.where({ family_id: familyId }).orderBy('joined_at', 'asc').limit(100)
+      )
+      return rows.map((row) => ({ ...row }))
+    },
     listFamilyMembers: (openid) => listFamilyMembers(db, openid),
   }
 }

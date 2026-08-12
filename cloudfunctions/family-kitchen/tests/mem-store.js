@@ -10,6 +10,9 @@
 // listDishes 按 family_id+is_deleted 过滤、created_at 降序;
 // findOrderRefs 扫描 meals(同家庭+同日期+ongoing/closed) 与 orders(dishes.dish_id 命中),
 // meals/orders 为空或不存在即返回空数组(生产端对缺失集合同样折叠为空, 双胞胎天然空)。
+// 成员行(T3): getFamilyMember 未命中返回 null; updateFamilyMember 未命中抛 NOT_FOUND;
+// deleteFamilyMember 未命中静默折叠(生产 where().remove 对空集 removed=0 不报错);
+// listMembersByFamily 按 family_id 过滤 + joined_at 升序(立家者在前, 成员管理页数据源)。
 // 餐次关闭: claimClose 忠实复刻「条件更新」语义 —— 仅当文档存在 ∧ status='ongoing' ∧
 // (requireDue 时 deadline<=now) 才置 closed+closed_at 返回 {updated:1}, 任一条件不满足返回
 // {updated:0}(生产端 where().update 的 stats.updated, 不抛错), 故「同一餐次重复抢占一定是 stale」;
@@ -57,6 +60,28 @@ function createMemStore() {
     async getFamily(familyId) {
       const doc = col('families').get(familyId)
       return doc ? { ...doc } : null
+    },
+    async getFamilyMember(familyId, openid) {
+      const row = col('family_members').get(familyId + ':' + openid)
+      return row ? { ...row } : null
+    },
+    async updateFamilyMember(familyId, openid, patch) {
+      const members = col('family_members')
+      const key = familyId + ':' + openid
+      if (!members.has(key)) return Promise.reject(nfError('family_members', key))
+      const merged = { ...members.get(key), ...patch }
+      members.set(key, merged)
+      return { ...merged }
+    },
+    async deleteFamilyMember(familyId, openid) {
+      // 生产端 where().remove() 对不存在行返回 removed=0 不报错 —— 双胞胎同语义(幂等)
+      col('family_members').delete(familyId + ':' + openid)
+    },
+    async listMembersByFamily(familyId) {
+      return [...col('family_members').values()]
+        .filter((row) => row.family_id === familyId)
+        .sort((a, b) => a.joined_at - b.joined_at)
+        .map((row) => ({ ...row }))
     },
     async updateFamily(familyId, patch) {
       const families = col('families')

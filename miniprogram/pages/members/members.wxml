@@ -1,0 +1,39 @@
+<view class="members">
+  <view class="family-header">
+    <text class="family-name">{{familyName}}</text>
+    <text class="family-count">{{members.length}} 位成员</text>
+  </view>
+
+  <view class="member-list">
+    <view class="member-item" wx:for="{{members}}" wx:key="user_openid">
+      <view class="avatar">{{item.display}}</view>
+      <view class="member-info">
+        <text class="member-name">{{item.display}}{{item.isMe ? '（我）' : ''}}</text>
+        <text class="member-role {{item.role === 'creator' ? 'creator' : ''}}">{{item.role === 'creator' ? '立家者' : '成员'}}</text>
+      </view>
+      <text class="joined-at">{{item.joinedText}} 加入</text>
+    </view>
+  </view>
+
+  <view class="actions">
+    <text class="leave-hint" wx:if="{{isCreator}}">你是立家者，需先转让所有权或解散家庭后才能退出</text>
+    <button
+      class="btn-transfer"
+      wx:if="{{isCreator}}"
+      disabled="{{busy}}"
+      bindtap="onTransfer"
+    >转让所有权</button>
+    <button
+      class="btn-dissolve {{dissolvingArmed ? 'armed' : ''}}"
+      wx:if="{{isCreator}}"
+      disabled="{{busy || dissolving}}"
+      bindtap="onDissolve"
+    >{{dissolving ? '解散中…' : (dissolvingArmed ? '再次点击确认解散' : '解散家庭')}}</button>
+    <button
+      class="btn-leave"
+      wx:if="{{!isCreator}}"
+      disabled="{{busy}}"
+      bindtap="onLeave"
+    >退出家庭</button>
+  </view>
+</view>

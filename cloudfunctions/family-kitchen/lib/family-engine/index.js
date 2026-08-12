@@ -3,16 +3,19 @@
 const crypto = require('node:crypto')
 
 /**
- * FamilyEngine：立家 / 凭码加入 / 我的家庭 / 生成邀请码。零 SDK、零 I/O，Store port + Clock 注入。
+ * FamilyEngine：立家 / 凭码加入 / 我的家庭 / 生成邀请码 / 成员列表 / 退出 / 转让 / 解散。
+ * 零 SDK、零 I/O，Store port + Clock 注入。
  * 契约见 docs/design/family-engine.md。families / family_members 集合归本引擎独占写入。
  * @param {{
  *   getFamily: Function, createFamily: Function, updateFamily: Function,
  *   findFamilyByInvite: Function, addFamilyMember: Function, listFamilyMembers: Function,
+ *   getFamilyMember: Function, updateFamilyMember: Function, deleteFamilyMember: Function,
+ *   listMembersByFamily: Function,
  * }} store
  * @param {{now: Function}} clock 固定时钟注入点（生产 = Date.now）
  */
 function createFamilyEngine(store, clock = { now: () => Date.now() }) {
-  return { createFamily, joinByCode, myFamilies, generateInviteCode }
+  return { createFamily, joinByCode, myFamilies, generateInviteCode, listMembers, leaveFamily, transferOwnership, dissolveFamily }
 
   async function createFamily({ openid, nickname, name }) {
     const trimmed = String(name == null ? '' : name).trim()
@@ -91,6 +94,60 @@ function createFamilyEngine(store, clock = { now: () => Date.now() }) {
       expires_at: at + WEEK,
     })
     return { code: updated.invite_code, expiresAt: updated.expires_at }
+  }
+
+  // ── T3 成员生命周期: 列表 / 退出 / 转让所有权 / 解散(冻结, ADR-0003) ──
+  // 守卫基调 NOT_MEMBER → FAMILY_FROZEN → 角色校验; 一个例外: dissolveFamily
+  // 角色校验在前, 且对冻结幂等接受 —— 冻结后全库仅此接口接受 frozen 状态
+  // (成员被困的冻结家庭由「成员不可退」保证数据只增不减, 见 family-engine.md 不变量 3)。
+
+  // 成员列表(成员管理页数据源): 视图 {openid, role, joined_at}(family_members 无昵称列,
+  // 昵称展示预留给后续成员展示链路, 见 family-engine.md nickname 注记)
+  async function listMembers({ familyId }, openid) {
+    const family = await store.getFamily(familyId)
+    const memberships = await store.listFamilyMembers(openid)
+    if (!family || !memberships.some((row) => row.family_id === familyId)) {
+      throw domainError('NOT_MEMBER', '你不是该家庭成员')
+    }
+    if (family.status !== 'active') throw domainError('FAMILY_FROZEN', '家庭已冻结')
+    return store.listMembersByFamily(familyId)
+  }
+
+  async function leaveFamily({ familyId }, openid) {
+    const family = await store.getFamily(familyId)
+    const row = await store.getFamilyMember(familyId, openid)
+    if (!family || !row) throw domainError('NOT_MEMBER', '你不是该家庭成员')
+    if (family.status !== 'active') throw domainError('FAMILY_FROZEN', '家庭已冻结')
+    if (row.role === 'creator') {
+      throw domainError('CREATOR_LEAVE_FORBIDDEN', '立家者需先转让所有权或解散家庭')
+    }
+    await store.deleteFamilyMember(familyId, openid)
+    await store.updateFamily(familyId, { member_count: family.member_count - 1 })
+  }
+
+  async function transferOwnership({ familyId }, from, to) {
+    const family = await store.getFamily(familyId)
+    const myRow = await store.getFamilyMember(familyId, from)
+    if (!family || !myRow) throw domainError('NOT_MEMBER', '你不是该家庭成员')
+    if (family.status !== 'active') throw domainError('FAMILY_FROZEN', '家庭已冻结')
+    if (myRow.role !== 'creator') throw domainError('TRANSFER_NOT_CREATOR', '仅立家者可转让所有权')
+    const targetRow = await store.getFamilyMember(familyId, to)
+    if (!targetRow) throw domainError('TRANSFER_TO_NON_MEMBER', '目标须为该家庭的现役成员')
+    if (to === from) return // 转让给本人: 幂等空操作(角色与 creator_openid 原样保留)
+    // 先升目标再降原立家者, 最后改 creator_openid —— 任一瞬间都至少存在一名立家者,
+    // 无「无立家者」空窗(若先降后升, 两次写之间会出现零立家者的非法窗口)
+    await store.updateFamilyMember(familyId, to, { role: 'creator' })
+    await store.updateFamilyMember(familyId, from, { role: 'member' })
+    await store.updateFamily(familyId, { creator_openid: to })
+  }
+
+  async function dissolveFamily({ familyId }, openid) {
+    const family = await store.getFamily(familyId)
+    const row = await store.getFamilyMember(familyId, openid)
+    if (!family || !row) throw domainError('NOT_MEMBER', '你不是该家庭成员')
+    if (row.role !== 'creator') throw domainError('DISSOLVE_NOT_CREATOR', '仅立家者可解散家庭')
+    if (family.status !== 'active') return // 已冻结: 幂等, 不覆盖 dissolved_at(ADR-0003)
+    await store.updateFamily(familyId, { status: 'frozen', dissolved_at: clock.now() })
   }
 }
 

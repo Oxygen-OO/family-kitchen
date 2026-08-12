@@ -50,7 +50,7 @@
 |---|---|---|---|
 | IdentityEngine | lib/identity | 3 个方法（见 identity.md） | 首登 get-or-create、自填档案、启动路由判定、客户端缓存兜底 |
 | MealEngine | lib/meal-engine | 7 个方法（见 meal-engine.md） | 状态机+截止管线+幂等+授权消费，全部规则收在一个类后 |
-| FamilyEngine | lib/family-engine | 7 个方法（见 family-engine.md） | 立家/邀请/转让/解散不变量 |
+| FamilyEngine | lib/family-engine | 8 个方法（见 family-engine.md） | 立家/邀请/转让/解散不变量 |
 | DishEngine | lib/dish-engine | 7 个方法（见 dishes.md） | 结构化食材契约、软删+当日引用保护、信任模型 |
 | PrepSummarizer | lib/summarizer | 1 个纯函数 `buildSummary` | 按菜聚合+食材精确去重合并 |
 | 入口壳 | index.js | action 路由 | 刻意薄，不承载规则 |

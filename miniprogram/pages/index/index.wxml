@@ -34,6 +34,10 @@
       class="menu-btn"
       bindtap="onOpenMenu"
     >家庭菜单</button>
+    <button
+      class="members-btn"
+      bindtap="onOpenMembers"
+    >成员管理</button>
     <view class="meal-entry">
       <text class="meal-entry-title">今日餐次</text>
       <view class="meal-slots">

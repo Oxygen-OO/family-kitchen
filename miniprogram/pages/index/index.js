@@ -34,6 +34,11 @@ Page({
       )
       const fallback = families.find((f) => f.status === 'active')
       const current = remembered || fallback
+      // AC(T3): 成员进入时全局提示「该家庭已冻结」(上次停留的是冻结家庭, 切换器已置灰不可进入)
+      const storedFamily = families.find((f) => f.family_id === storedId)
+      if (storedFamily && storedFamily.status !== 'active') {
+        wx.showToast({ title: '该家庭已冻结', icon: 'none' })
+      }
       this.setData({
         nickname: boot.user.nickname,
         families,
@@ -58,6 +63,11 @@ Page({
   onOpenMenu() {
     if (!this.data.currentFamilyId) return
     wx.navigateTo({ url: '/pages/dishes/dishes' })
+  },
+
+  onOpenMembers() {
+    if (!this.data.currentFamilyId) return
+    wx.navigateTo({ url: '/pages/members/members' })
   },
 
   // 今日餐次入口: 先读(已有餐次任何状态均可进入只读/点餐), 未发起才写(发起失败如已过

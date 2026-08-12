@@ -61,6 +61,14 @@ const actions = {
     event.__openid,
     { now: Date.now() }
   ),
+  listMembers: (event) => family.listMembers({ familyId: event.familyId }, event.__openid),
+  leaveFamily: (event) => family.leaveFamily({ familyId: event.familyId }, event.__openid),
+  transferOwnership: (event) => family.transferOwnership(
+    { familyId: event.familyId },
+    event.__openid,
+    event.toOpenid
+  ),
+  dissolveFamily: (event) => family.dissolveFamily({ familyId: event.familyId }, event.__openid),
   listDishes: (event) => dish.listDishes({ familyId: event.familyId }, event.__openid),
   listRemovedDishes: (event) => dish.listRemovedDishes({ familyId: event.familyId }, event.__openid),
   createDish: (event) => dish.createDish({
