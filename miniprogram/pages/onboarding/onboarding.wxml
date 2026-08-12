@@ -1,0 +1,31 @@
+<view class="onboarding">
+  <view class="hero">
+    <text class="title">欢迎来到家庭厨房</text>
+    <text class="subtitle">先完善你的身份信息，再与家人共享菜单</text>
+  </view>
+
+  <view class="form">
+    <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+      <image class="avatar" wx:if="{{avatarUrl}}" src="{{avatarUrl}}" mode="aspectFill" />
+      <text class="avatar-placeholder" wx:else>+</text>
+    </button>
+    <text class="avatar-hint">点击选择头像</text>
+
+    <input
+      class="nickname-input"
+      type="nickname"
+      placeholder="请输入昵称"
+      value="{{nickname}}"
+      bindinput="onNicknameInput"
+    />
+
+    <button class="save-btn" loading="{{saving}}" disabled="{{saving}}" bindtap="onSaveProfile">
+      保存
+    </button>
+  </view>
+
+  <view class="family-hint">
+    <text class="family-title">加入家人</text>
+    <text class="family-subtitle">创建或加入家庭后即可开始点餐</text>
+  </view>
+</view>

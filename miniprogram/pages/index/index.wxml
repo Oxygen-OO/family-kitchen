@@ -1,0 +1,17 @@
+<view class="index">
+  <view class="header">
+    <text class="greeting" wx:if="{{nickname}}">{{nickname}}，欢迎回来</text>
+    <text class="greeting" wx:else>家庭厨房</text>
+  </view>
+
+  <view class="family-card" wx:if="{{defaultFamilyId}}">
+    <text class="family-label">当前家庭</text>
+    <text class="family-id">{{defaultFamilyId}}</text>
+    <text class="family-hint">家庭内容即将上线</text>
+  </view>
+
+  <view class="empty" wx:else>
+    <text class="empty-title">家庭内容即将上线</text>
+    <text class="empty-subtitle">创建家庭后即可开始共享菜单</text>
+  </view>
+</view>

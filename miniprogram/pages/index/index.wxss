@@ -1,0 +1,59 @@
+.index {
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding: 48rpx;
+  box-sizing: border-box;
+}
+
+.header {
+  margin-bottom: 48rpx;
+}
+
+.greeting {
+  font-size: 44rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.family-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 32rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.family-label {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.family-id {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.family-hint {
+  font-size: 24rpx;
+  color: #bbb;
+}
+
+.empty {
+  margin-top: 200rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.empty-title {
+  font-size: 30rpx;
+  color: #666;
+}
+
+.empty-subtitle {
+  font-size: 24rpx;
+  color: #bbb;
+}

@@ -1,0 +1,9 @@
+{
+  "name": "family-kitchen",
+  "version": "1.0.0",
+  "description": "微信云函数：单函数 action 路由，身份层 lib/identity",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

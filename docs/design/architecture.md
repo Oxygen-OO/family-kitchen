@@ -11,9 +11,10 @@
 云函数: cloudfunctions/family-kitchen/  (单函数起步, 见「部署形态」)
    ├── index.js       薄壳: 按 event.action 路由到 lib 深模块
    ├── lib/
-   │   ├── meal-engine/        餐次引擎 (全部餐次/点餐/截止规则)
-   │   ├── family-engine/      家庭引擎 (立家/邀请/转让/解散)
-   │   ├── summarizer/         备餐汇总器 (纯函数)
+   │   ├── identity/          登录与身份层 (login/saveProfile/startup, users 档案 + 启动路由判定)
+   │   ├── meal-engine/       餐次引擎 (全部餐次/点餐/截止规则)
+   │   ├── family-engine/     家庭引擎 (立家/邀请/转让/解散)
+   │   ├── summarizer/        备餐汇总器 (纯函数)
    │   └── ports/              云数据库/Clock/订阅消息 适配器 (唯一 import wx-server-sdk 的地方)
    ▼ seam 2: ports —— 云数据库 / 微信订阅消息(外部) / 时间
 ```
@@ -44,6 +45,7 @@
 
 | 模块 | 位置 | 接口 | 深度来源 |
 |---|---|---|---|
+| IdentityEngine | lib/identity | 3 个方法（见 identity.md） | 首登 get-or-create、自填档案、启动路由判定、客户端缓存兜底 |
 | MealEngine | lib/meal-engine | 7 个方法（见 meal-engine.md） | 状态机+截止管线+幂等+授权消费，全部规则收在一个类后 |
 | FamilyEngine | lib/family-engine | 7 个方法（见 family-engine.md） | 立家/邀请/转让/解散不变量 |
 | PrepSummarizer | lib/summarizer | 1 个纯函数 `buildSummary` | 按菜聚合+食材精确去重合并 |
