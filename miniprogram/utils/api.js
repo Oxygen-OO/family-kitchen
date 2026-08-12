@@ -36,6 +36,10 @@ const api = {
   loginByCode: (code) => call('login', { code }),
   startup: () => call('startup'),
   saveProfile: (profile) => call('saveProfile', profile),
+  createFamily: (name) => call('createFamily', { name }),
+  joinByCode: (code) => call('joinByCode', { code }),
+  myFamilies: () => call('myFamilies'),
+  generateInviteCode: (familyId) => call('generateInviteCode', { familyId }),
 }
 
 function initCloud() {

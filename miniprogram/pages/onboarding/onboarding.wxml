@@ -28,4 +28,34 @@
     <text class="family-title">加入家人</text>
     <text class="family-subtitle">创建或加入家庭后即可开始点餐</text>
   </view>
+
+  <view class="family-panel">
+    <view class="panel-card">
+      <text class="panel-title">创建家庭</text>
+      <input
+        class="panel-input"
+        placeholder="家庭名称（2–12 个字符）"
+        maxlength="12"
+        value="{{familyName}}"
+        bindinput="onFamilyNameInput"
+      />
+      <button class="panel-btn" loading="{{submitting}}" disabled="{{submitting}}" bindtap="onCreateFamily">
+        创建
+      </button>
+    </view>
+
+    <view class="panel-card">
+      <text class="panel-title">加入家庭</text>
+      <input
+        class="panel-input"
+        placeholder="6 位邀请码"
+        maxlength="6"
+        value="{{inviteCode}}"
+        bindinput="onInviteCodeInput"
+      />
+      <button class="panel-btn" loading="{{submitting}}" disabled="{{submitting}}" bindtap="onJoinFamily">
+        加入
+      </button>
+    </view>
+  </view>
 </view>

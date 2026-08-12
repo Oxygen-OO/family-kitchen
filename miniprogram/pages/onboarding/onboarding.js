@@ -7,6 +7,9 @@ Page({
     nickname: '',
     avatarUrl: '',
     saving: false,
+    familyName: '',
+    inviteCode: '',
+    submitting: false,
   },
 
   async onShow() {
@@ -36,6 +39,14 @@ Page({
     this.setData({ nickname: e.detail.value })
   },
 
+  onFamilyNameInput(e) {
+    this.setData({ familyName: e.detail.value })
+  },
+
+  onInviteCodeInput(e) {
+    this.setData({ inviteCode: e.detail.value })
+  },
+
   async onSaveProfile() {
     const nickname = (this.data.nickname || '').trim()
     if (!nickname) {
@@ -51,6 +62,40 @@ Page({
     } catch (err) {
       this.setData({ saving: false })
       wx.showToast({ title: err.message || '保存失败', icon: 'none' })
+    }
+  },
+
+  async onCreateFamily() {
+    const name = (this.data.familyName || '').trim()
+    if (!name) {
+      wx.showToast({ title: '请输入家庭名称', icon: 'none' })
+      return
+    }
+    await this.submit(() => api.createFamily(name), '家庭已创建')
+  },
+
+  async onJoinFamily() {
+    const code = (this.data.inviteCode || '').trim()
+    if (!code) {
+      wx.showToast({ title: '请输入邀请码', icon: 'none' })
+      return
+    }
+    await this.submit(() => api.joinByCode(code), '已加入家庭')
+  },
+
+  async submit(runApi, successText) {
+    if (this.data.submitting) return
+    this.setData({ submitting: true })
+    try {
+      await runApi()
+      const app = getApp()
+      await app.refreshSession()
+      this.setData({ submitting: false, familyName: '', inviteCode: '' })
+      wx.showToast({ title: successText, icon: 'success' })
+      setTimeout(() => wx.reLaunch({ url: '/pages/index/index' }), 600)
+    } catch (err) {
+      this.setData({ submitting: false })
+      wx.showToast({ title: err.message || '操作失败', icon: 'none' })
     }
   },
 

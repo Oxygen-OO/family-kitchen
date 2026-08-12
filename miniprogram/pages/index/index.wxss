@@ -15,6 +15,55 @@
   color: #333;
 }
 
+.switcher {
+  margin-bottom: 32rpx;
+}
+
+.switcher-title {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.switcher-list {
+  margin-top: 16rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.switcher-item {
+  padding: 16rpx 24rpx;
+  border-radius: 40rpx;
+  background: #fff;
+  border: 2rpx solid #e5e6eb;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.switcher-item.active {
+  border-color: #07c160;
+  background: #e8f9ef;
+}
+
+.switcher-item.frozen {
+  opacity: 0.5;
+}
+
+.switcher-name {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.switcher-role {
+  font-size: 20rpx;
+  color: #07c160;
+}
+
+.frozen-tag {
+  color: #999;
+}
+
 .family-card {
   background: #fff;
   border-radius: 16rpx;
@@ -29,15 +78,18 @@
   color: #999;
 }
 
-.family-id {
+.family-name {
   font-size: 34rpx;
   font-weight: 600;
   color: #333;
 }
 
-.family-hint {
-  font-size: 24rpx;
-  color: #bbb;
+.invite-btn {
+  margin-top: 16rpx;
+  background: #07c160;
+  color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
 }
 
 .empty {

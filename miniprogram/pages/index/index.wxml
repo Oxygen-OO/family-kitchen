@@ -4,14 +4,36 @@
     <text class="greeting" wx:else>家庭厨房</text>
   </view>
 
-  <view class="family-card" wx:if="{{defaultFamilyId}}">
+  <view class="switcher" wx:if="{{families.length > 0}}">
+    <text class="switcher-title">我的家庭</text>
+    <view class="switcher-list">
+      <view
+        wx:for="{{families}}"
+        wx:key="family_id"
+        class="switcher-item {{item.family_id === currentFamilyId ? 'active' : ''}} {{item.status !== 'active' ? 'frozen' : ''}}"
+        data-id="{{item.family_id}}"
+        bindtap="onSwitchFamily"
+      >
+        <text class="switcher-name">{{item.name}}</text>
+        <text class="switcher-role" wx:if="{{item.my_role === 'creator'}}">立家者</text>
+        <text class="switcher-role frozen-tag" wx:elif="{{item.status !== 'active'}}">已冻结</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="family-card" wx:if="{{currentFamilyId}}">
     <text class="family-label">当前家庭</text>
-    <text class="family-id">{{defaultFamilyId}}</text>
-    <text class="family-hint">家庭内容即将上线</text>
+    <text class="family-name">{{currentFamilyName}}</text>
+    <button
+      class="invite-btn"
+      loading="{{inviting}}"
+      disabled="{{inviting}}"
+      bindtap="onInvite"
+    >邀请家人</button>
   </view>
 
   <view class="empty" wx:else>
-    <text class="empty-title">家庭内容即将上线</text>
-    <text class="empty-subtitle">创建家庭后即可开始共享菜单</text>
+    <text class="empty-title">还没有可用家庭</text>
+    <text class="empty-subtitle">创建或加入家庭后即可开始共享菜单</text>
   </view>
 </view>
