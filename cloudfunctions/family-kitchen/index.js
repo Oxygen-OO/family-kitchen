@@ -7,13 +7,15 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 const { createIdentityEngine } = require('./lib/identity/index.js')
 const { createFamilyEngine } = require('./lib/family-engine/index.js')
 const { createDishEngine } = require('./lib/dish-engine/index.js')
-const { createIdentityStore, createFamilyStore, createDishStore } = require('./lib/ports/db.js')
+const { createMealEngine } = require('./lib/meal-engine/index.js')
+const { createIdentityStore, createFamilyStore, createDishStore, createMealStore } = require('./lib/ports/db.js')
 
 const db = cloud.database()
 const identityStore = createIdentityStore(db)
 const identity = createIdentityEngine(identityStore)
 const family = createFamilyEngine(createFamilyStore(db), { now: () => Date.now() })
 const dish = createDishEngine(createDishStore(db), { now: () => Date.now() })
+const meal = createMealEngine(createMealStore(db), { now: () => Date.now() })
 
 // 昵称一律取 users 档案（T1 查询能力），不信任客户端自称；顺带校验登录态
 async function userByOpenid(openid) {
@@ -77,6 +79,21 @@ const actions = {
   }, event.__openid),
   deleteDish: (event) => dish.deleteDish({ familyId: event.familyId, dishId: event.dishId }, event.__openid),
   restoreDish: (event) => dish.restoreDish({ familyId: event.familyId, dishId: event.dishId }, event.__openid),
+  initiate: (event) => meal.initiate({
+    familyId: event.familyId,
+    date: event.date,
+    slot: event.slot,
+  }, event.__openid, { deadline: event.deadline, now: Date.now() }),
+  viewMeal: (event) => meal.viewMeal(event.mealId, event.__openid),
+  placeOrder: async (event) => {
+    const user = await userByOpenid(event.__openid)
+    return meal.placeOrder(
+      event.mealId,
+      event.__openid,
+      { dishes: event.dishes, note: event.note },
+      { nickname: user.nickname, now: Date.now() }
+    )
+  },
 }
 
 function openidOf() {

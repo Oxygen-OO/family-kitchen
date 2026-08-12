@@ -101,6 +101,34 @@
   font-size: 30rpx;
 }
 
+.meal-entry {
+  margin-top: 24rpx;
+  border-top: 2rpx solid #f2f3f5;
+  padding-top: 24rpx;
+}
+
+.meal-entry-title {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.meal-slots {
+  margin-top: 16rpx;
+  display: flex;
+  gap: 16rpx;
+}
+
+.meal-slot {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx 0;
+  border-radius: 16rpx;
+  background: #f7f8fa;
+  color: #07c160;
+  font-size: 30rpx;
+  font-weight: 500;
+}
+
 .empty {
   margin-top: 200rpx;
   display: flex;

@@ -4,7 +4,8 @@
     "pages/onboarding/onboarding",
     "pages/dishes/dishes",
     "pages/dish-edit/dish-edit",
-    "pages/dishes-removed/dishes-removed"
+    "pages/dishes-removed/dishes-removed",
+    "pages/meal/meal"
   ],
   "window": {
     "navigationBarTitleText": "家庭厨房",

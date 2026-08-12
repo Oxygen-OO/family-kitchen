@@ -43,6 +43,10 @@ interface MealView {
 
 `Err = NOT_MEMBER | FAMILY_FROZEN | MEAL_EXISTS | MEAL_NOT_FOUND | MEAL_LOCKED(closed/prepared 禁写) | NOT_ONGOING(closeEarly/markPrepared 状态不符) | PAST_CUTOFF(由 close-if-due 代截止后落此) | DISH_UNKNOWN | DISH_REMOVED(非致命, 随 dropped 返回) | DEADLINE_IN_PAST`
 
+T6 增补（入参形状校验，代码即契约，同 dishes.md 的 T4 增补先例）：
+`SLOT_INVALID | DATE_INVALID | DISHES_INVALID | QUANTITY_INVALID`。
+`DISH_REMOVED` 在错误表属预留：T6 实际以下架/软删菜的 `dropped: [{dishId, dishName}]` 视图返回（非致命）承载，不抛错误码。
+
 不变量与顺序约束（调用方需知的全部事实）：
 - 所有入口第一步过家庭守卫：成员 ∧ 家庭未冻结（经 MealStore.familyCtx）；非成员/冻结一律拒绝。
 - `(family_id, date, slot)` 唯一，撞键 = MEAL_EXISTS；closed/prepared 不可重开（命令集里根本没有 reopen）。

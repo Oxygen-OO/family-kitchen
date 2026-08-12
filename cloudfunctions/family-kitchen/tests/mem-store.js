@@ -105,6 +105,38 @@ function createMemStore() {
         .filter((o) => mealIds.includes(o.meal_id) && (o.dishes || []).some((d) => d.dish_id === dishId))
         .map((o) => ({ ...o }))
     },
+    // 餐次: getMeal 未命中返回 null; createMeal 撞派生 _id(familyId:date:slot) 抛 DUPLICATE_KEY
+    // (生产端 add 带显式 _id 撞键报重复, 双胞胎同语义);
+    // getOrder 按派生 _id=mealId:openid 读取(每人每餐一单), 未命中返回 null;
+    // listOrders 按 meal_id 过滤。
+    async getMeal(mealId) {
+      const doc = col('meals').get(mealId)
+      return doc ? { ...doc } : null
+    },
+    async createMeal(doc) {
+      const meals = col('meals')
+      if (meals.has(doc._id)) return Promise.reject(dupError(doc._id))
+      meals.set(doc._id, { ...doc })
+      return { ...meals.get(doc._id) }
+    },
+    async getOrder(mealId, openid) {
+      const doc = col('orders').get(`${mealId}:${openid}`)
+      return doc ? { ...doc } : null
+    },
+    async listOrders(mealId) {
+      return [...col('orders').values()]
+        .filter((o) => o.meal_id === mealId)
+        .map((o) => ({ ...o }))
+    },
+    // 订单: 派生 _id=mealId:openid(每人每餐一单), upsertOrder 建/替同语义(生产 doc().set);
+    // deleteOrder 未命中不报错(生产 doc().remove 幂等)。
+    async upsertOrder(order) {
+      col('orders').set(order._id, { ...order })
+      return { ...col('orders').get(order._id) }
+    },
+    async deleteOrder(mealId, openid) {
+      col('orders').delete(`${mealId}:${openid}`)
+    },
     _seedFamily(doc) {
       if (!doc._id) doc._id = 'family-' + (++familySeq)
       col('families').set(doc._id, { ...doc })

@@ -1,0 +1,121 @@
+<view class="meal">
+  <view class="hero">
+    <view class="hero-title-row">
+      <text class="hero-slot">{{slotLabel}}</text>
+      <text class="hero-date">{{meal.date}}</text>
+      <text class="hero-badge closed" wx:if="{{status === 'closed'}}">已截止</text>
+      <text class="hero-badge prepared" wx:elif="{{status === 'prepared'}}">已备餐</text>
+      <text class="hero-badge closed" wx:elif="{{!canOrder}}">已截止</text>
+      <text class="hero-badge ongoing" wx:else>进行中</text>
+    </view>
+    <view class="hero-countdown" wx:if="{{countdown}}">
+      <text class="hero-countdown-label">距截止</text>
+      <text class="hero-countdown-time">{{countdown}}</text>
+    </view>
+    <view class="hero-hint" wx:elif="{{status === 'prepared'}}">本餐次已完成备餐，可参考汇总清单准备</view>
+    <view class="hero-hint" wx:elif="{{status === 'closed' || !canOrder}}">该餐次已截止，点选已锁定</view>
+  </view>
+
+  <!-- 实时汇总预览（进行中 = buildSummary 实算；已截止/已备餐 = 截止时物化快照） -->
+  <view class="section" wx:if="{{live}}">
+    <view class="section-title">汇总预览</view>
+    <view class="empty-tip" wx:if="{{live.byDish.length === 0}}">还没有人点餐</view>
+    <view class="sum-row" wx:for="{{live.byDish}}" wx:key="dishId" wx:for-item="row">
+      <view class="sum-row-title">
+        <text class="sum-dish">{{row.dishName}}</text>
+        <text class="sum-tag removed" wx:if="{{row.removed}}">已下架</text>
+        <text class="sum-qty">×{{row.totalQuantity}}</text>
+      </view>
+      <text class="sum-people">{{orderedByText(row.orderedBy)}}</text>
+    </view>
+    <view class="ing-row" wx:for="{{live.ingredients}}" wx:key="name" wx:for-item="ing">
+      <text class="ing-name">{{ing.name}}</text>
+      <text class="ing-amount">{{ing.amountText}}</text>
+    </view>
+  </view>
+
+  <!-- 我的点选 -->
+  <view class="section" wx:if="{{myOrder && myOrder.dishes.length > 0}}">
+    <view class="section-title">
+      我的点选
+      <text class="cancel-link" wx:if="{{canOrder}}" bindtap="cancelOrder">取消点选</text>
+    </view>
+    <view class="mine-row" wx:for="{{myOrder.dishes}}" wx:key="dishId" wx:for-item="row">
+      <text class="mine-name">{{row.name}}</text>
+      <text class="mine-qty">×{{row.quantity}}</text>
+    </view>
+    <text class="mine-note" wx:if="{{myOrder.note}}">备注：{{myOrder.note}}</text>
+  </view>
+
+  <!-- 菜品选择 -->
+  <view class="section">
+    <view class="section-title-row">
+      <text class="section-title">菜单</text>
+      <view class="view-switcher">
+        <text class="view-btn {{viewMode === 'card' ? 'active' : ''}}" data-mode="card" bindtap="onViewMode">大图</text>
+        <text class="view-btn {{viewMode === 'row' ? 'active' : ''}}" data-mode="row" bindtap="onViewMode">小图</text>
+        <text class="view-btn {{viewMode === 'minimal' ? 'active' : ''}}" data-mode="minimal" bindtap="onViewMode">极简</text>
+      </view>
+    </view>
+    <view class="empty-tip" wx:if="{{menu.length === 0}}">
+      <text>菜单还是空的</text>
+      <text class="empty-sub" wx:if="{{canOrder}}">去菜单页添加菜品后即可点选</text>
+    </view>
+    <view class="dish-card {{viewMode === 'row' ? 'row' : ''}}" wx:for="{{menu}}" wx:key="dishId" wx:if="{{viewMode !== 'minimal'}}">
+      <view class="dish-body">
+        <text class="dish-name">{{item.name}}</text>
+        <text class="dish-ingredients">{{ingredientsText(item.ingredients)}}</text>
+      </view>
+      <view class="stepper" wx:if="{{canOrder}}">
+        <view class="step-btn {{item.quantity === 0 ? 'step-disabled' : ''}}" data-dishid="{{item.dishId}}" bindtap="onMinus">−</view>
+        <text class="step-qty">{{item.quantity}}</text>
+        <view class="step-btn" data-dishid="{{item.dishId}}" bindtap="onPlus">+</view>
+      </view>
+      <text class="readonly-qty-text" wx:elif="{{item.quantity > 0}}">已点</text>
+    </view>
+    <view class="dish-card minimal" wx:for="{{menu}}" wx:key="dishId" wx:else>
+      <text class="dish-name">{{item.name}}</text>
+      <view class="stepper" wx:if="{{canOrder}}">
+        <view class="step-btn {{item.quantity === 0 ? 'step-disabled' : ''}}" data-dishid="{{item.dishId}}" bindtap="onMinus">−</view>
+        <text class="step-qty">{{item.quantity}}</text>
+        <view class="step-btn" data-dishid="{{item.dishId}}" bindtap="onPlus">+</view>
+      </view>
+      <text class="readonly-qty-text" wx:elif="{{item.quantity > 0}}">已点</text>
+    </view>
+  </view>
+
+  <!-- 底部悬浮: 已选 X 道, 共 Y 份 -->
+  <view class="floating-bar" wx:if="{{canOrder && cartCount > 0}}" bindtap="onOpenPanel">
+    <view class="floating-info">
+      <text class="floating-count">{{cartCount}} 道</text>
+      <text class="floating-divider">/</text>
+      <text class="floating-total">共 {{cartTotal}} 份</text>
+    </view>
+    <view class="floating-btn">去确认</view>
+  </view>
+
+  <!-- 确认面板 -->
+  <view class="mask" wx:if="{{panelOpen}}" bindtap="onClosePanel"></view>
+  <view class="panel" wx:if="{{panelOpen}}">
+    <view class="panel-title-row">
+      <text class="panel-title">确认点选</text>
+      <text class="panel-close" bindtap="onClosePanel">关闭</text>
+    </view>
+    <view class="panel-row" wx:for="{{cart}}" wx:key="dishId" wx:if="{{item.quantity > 0}}">
+      <text class="panel-name">{{item.name}}</text>
+      <view class="stepper">
+        <view class="step-btn" data-dishid="{{item.dishId}}" bindtap="onPanelMinus">−</view>
+        <text class="step-qty">{{item.quantity}}</text>
+        <view class="step-btn" data-dishid="{{item.dishId}}" bindtap="onPanelPlus">+</view>
+      </view>
+    </view>
+    <input
+      class="note-input"
+      placeholder="备注（口味、忌口等，可选）"
+      value="{{note}}"
+      maxlength="100"
+      bindinput="onNoteInput"
+    />
+    <button class="confirm-btn {{submitting ? 'disabled' : ''}}" bindtap="onConfirm">提交点选</button>
+  </view>
+</view>

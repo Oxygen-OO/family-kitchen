@@ -2,6 +2,12 @@
 
 const { api } = require('../../utils/api.js')
 
+const MEAL_SLOTS = [
+  { slot: 'breakfast', label: '早餐' },
+  { slot: 'lunch', label: '午餐' },
+  { slot: 'dinner', label: '晚餐' },
+]
+
 Page({
   data: {
     nickname: '',
@@ -9,6 +15,8 @@ Page({
     currentFamilyId: '',
     currentFamilyName: '',
     inviting: false,
+    mealSlots: MEAL_SLOTS,
+    enteringMeal: '',
   },
 
   async onShow() {
@@ -50,6 +58,44 @@ Page({
   onOpenMenu() {
     if (!this.data.currentFamilyId) return
     wx.navigateTo({ url: '/pages/dishes/dishes' })
+  },
+
+  // 今日餐次入口: 先读(已有餐次任何状态均可进入只读/点餐), 未发起才写(发起失败如已过
+  // 默认截止 → 提示不留死角); 派生 mealId familyId:date:slot 是架构锁定的 ID 契约
+  async onEnterMeal(e) {
+    const slot = e.currentTarget.dataset.slot
+    const familyId = this.data.currentFamilyId
+    if (!familyId || this.data.enteringMeal) return
+    const date = this.localDate()
+    const mealId = `${familyId}:${date}:${slot}`
+    this.setData({ enteringMeal: slot })
+    try {
+      try {
+        await api.viewMeal(mealId)
+      } catch (err) {
+        if (err.code === 'MEAL_NOT_FOUND') {
+          try {
+            await api.initiate(familyId, slot, { date })
+          } catch (initErr) {
+            if (initErr.code !== 'MEAL_EXISTS') throw initErr
+          }
+        } else {
+          throw err
+        }
+      }
+      wx.navigateTo({ url: `/pages/meal/meal?mealId=${mealId}` })
+    } catch (err) {
+      wx.showToast({ title: err.message || '进入失败', icon: 'none' })
+    } finally {
+      this.setData({ enteringMeal: '' })
+    }
+  },
+
+  localDate() {
+    const d = new Date()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${d.getFullYear()}-${m}-${day}`
   },
 
   async onInvite() {

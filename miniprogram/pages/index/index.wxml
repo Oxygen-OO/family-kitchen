@@ -34,6 +34,18 @@
       class="menu-btn"
       bindtap="onOpenMenu"
     >家庭菜单</button>
+    <view class="meal-entry">
+      <text class="meal-entry-title">今日餐次</text>
+      <view class="meal-slots">
+        <view
+          class="meal-slot"
+          wx:for="{{mealSlots}}"
+          wx:key="slot"
+          data-slot="{{item.slot}}"
+          bindtap="onEnterMeal"
+        >{{item.label}}</view>
+      </view>
+    </view>
   </view>
 
   <view class="empty" wx:else>
