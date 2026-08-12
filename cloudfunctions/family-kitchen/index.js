@@ -112,6 +112,7 @@ const actions = {
       { nickname: user.nickname, now: Date.now(), templateId: SUBSCRIBE_TEMPLATE_ID }
     )
   },
+  copyLastSelection: (event) => meal.copyLastSelection(event.mealId, event.__openid, { now: Date.now() }),
   closeEarly: (event) => meal.closeEarly(event.mealId, event.__openid, { now: Date.now() }),
   // cron 定时触发器 action(架构见 architecture.md 部署形态): event 仅含 action, 无 openid
   scanDue: () => meal.scanDue(),

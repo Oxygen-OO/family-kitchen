@@ -16,6 +16,14 @@
     <view class="hero-hint" wx:elif="{{status === 'closed' || !canOrder}}">该餐次已截止，点选已锁定</view>
   </view>
 
+  <!-- 顶部操作位: 复制昨天(仅进行中; 服务端全员副本 + fill-only, 不覆盖已有选点) -->
+  <view class="section" wx:if="{{canOrder}}">
+    <view class="copy-row">
+      <text class="copy-hint">一键复制昨天这一餐全家的点选</text>
+      <view class="copy-btn {{copying ? 'copy-btn-disabled' : ''}}" bindtap="onCopyYesterday">复制昨天</view>
+    </view>
+  </view>
+
   <!-- 实时汇总预览（进行中 = buildSummary 实算；已截止/已备餐 = 截止时物化快照） -->
   <view class="section" wx:if="{{live}}">
     <view class="section-title">汇总预览</view>

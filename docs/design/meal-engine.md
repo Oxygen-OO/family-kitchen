@@ -36,14 +36,15 @@ interface MealView {
   menu:    {dishId, name, ingredients: {name, amount}[]}[]          // is_available && !is_deleted 全池
   myOrder: {user_openid, user_nickname, dishes: {dishId, name, quantity}[], note} | null
   live?:   PrepSummary          // ongoing: 实时预览(只算不物化); closed/prepared: 读 meals.summary 快照
-  canOrder, granted, dropped: {dishId, dishName}[]
+  canOrder, granted, dropped: {dishId, dishName}[], copied: {dishId, dishName, quantity}[]
   // granted(T9): 本餐当前用户订阅记录是否已存在(授权或拒绝皆回显 true) —— 前端据此只弹一次授权窗
+  // copied(T7): copyLastSelection 特有(调用者本人的复制清单), 其余命令恒空 —— 形状稳定供前端透传
 }
 ```
 
 ## 错误模式
 
-`Err = NOT_MEMBER | FAMILY_FROZEN | MEAL_EXISTS | MEAL_NOT_FOUND | MEAL_LOCKED(closed/prepared 禁写) | NOT_ONGOING(closeEarly/markPrepared 状态不符) | PAST_CUTOFF(由 close-if-due 代截止后落此) | DISH_UNKNOWN | DISH_REMOVED(非致命, 随 dropped 返回) | DEADLINE_IN_PAST`
+`Err = NOT_MEMBER | FAMILY_FROZEN | MEAL_EXISTS | MEAL_NOT_FOUND | MEAL_LOCKED(closed/prepared 禁写) | NOT_ONGOING(closeEarly/markPrepared 状态不符) | PAST_CUTOFF(由 close-if-due 代截止后落此) | DISH_UNKNOWN | DISH_REMOVED(非致命, 随 dropped 返回) | DEADLINE_IN_PAST | NO_YESTERDAY_DATA(T7)`
 
 T6 增补（入参形状校验，代码即契约，同 dishes.md 的 T4 增补先例）：
 `SLOT_INVALID | DATE_INVALID | DISHES_INVALID | QUANTITY_INVALID`。
@@ -54,6 +55,19 @@ AC 的拒绝码写作 `MEAL_CLOSED`；本表以 `MEAL_LOCKED(closed/prepared 禁
 `PAST_CUTOFF(由 close-if-due 代截止后落此)` 为准，**不产生 MEAL_CLOSED 码**——
 同一命令撞已锁餐次时：本次由 close-if-due 当场代截止（抢到 claim）→ `PAST_CUTOFF`；
 已 closed/prepared（含竞争输家）→ `MEAL_LOCKED`。
+
+T7 增补（issue #7 AC 与锁定文档措辞差异，文档优先，先例同上）：
+- **复制范围 = 全员副本**（非仅发起者）：昨日同 slot 每名成员的选点复制到今日各自名下；
+  AC 中「当前用户…无 → 复制」是 fill-only 判定步骤对每名成员的逐人措辞，勿误读为只复制发起者。
+- 复制重解析 dishName 为今日现名（快照按今日再固化）；按 dishId 校验同 resolveDishes
+  契约：不存在/别家 → `DISH_UNKNOWN` 致命整体拒绝；is_deleted / !is_available → 非致命
+  `dropped`。昨日单全被过滤 → 该成员不落空单但 dropped 照常返回。
+- `NO_YESTERDAY_DATA`（昨日同 slot 无餐次或无人点餐。订单存在即有效——取消即删除无
+  cancelled 态，昨日餐次自身状态无关紧要）。
+- 返回视图的 `copied: [{dishId, dishName, quantity}]` 与 `dropped: [{dishId, dishName}]`
+  （dropped 形状沿用 T6 文档，AC 所写 {dishName} 为其子集）**以调用者本人为范围**——
+  全员复制照常执行，提示只给调用者。
+- 溯源：复制生成的订单 note 携带昨日 note（若有）并追加「[复制自昨日]」，拷贝源昨日单不被篡改。
 
 不变量与顺序约束（调用方需知的全部事实）：
 - 所有入口第一步过家庭守卫：成员 ∧ 家庭未冻结（经 MealStore.familyCtx）；非成员/冻结一律拒绝。

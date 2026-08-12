@@ -54,6 +54,7 @@ const api = {
   initiate: (familyId, slot, { date, deadline } = {}) => call('initiate', { familyId, slot, date, deadline }),
   viewMeal: (mealId) => call('viewMeal', { mealId }),
   placeOrder: (mealId, dishes, note, subscribed) => call('placeOrder', { mealId, dishes, note, subscribed }),
+  copyLastSelection: (mealId) => call('copyLastSelection', { mealId }),
   closeEarly: (mealId) => call('closeEarly', { mealId }),
 }
 

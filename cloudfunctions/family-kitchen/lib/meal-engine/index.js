@@ -28,7 +28,7 @@ const NOOP_NOTIFIER = { send: async () => ({ ok: false, skipped: 'no_notifier' }
  * @param {{send: Function}} notifier 订阅消息发送 port（生产 = lib/ports/notifier 适配器, 测试 = Spy）
  */
 function createMealEngine(store, clock = { now: () => Date.now() }, notifier = NOOP_NOTIFIER) {
-  return { initiate, viewMeal, placeOrder, closeEarly, scanDue }
+  return { initiate, viewMeal, placeOrder, copyLastSelection, closeEarly, scanDue }
 
   // ── 发起: (family_id, date, slot) 唯一场; 同键已存在任何状态 → MEAL_EXISTS(命令集无 reopen) ──
   async function initiate({ familyId, date, slot }, openid, { deadline, now } = {}) {
@@ -74,13 +74,9 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
   // nickname 由入口壳经 users 档案解析(下单即快照, 引擎不查 users)
   async function placeOrder(mealId, openid, { dishes, note, subscribed } = {}, { nickname, now, templateId } = {}) {
     const at = now == null ? clock.now() : now
-    const opened = await openMeal(store, mealId, openid)
     // 写命令先跑 close-if-due（T8）: ongoing ∧ now>=deadline → 代截止(claimClose 赢家),
     // 赢家本次命令落 PAST_CUTOFF; 已 closed/prepared(含抢占输家) → MEAL_LOCKED。
-    const guard = await closeIfDue(store, opened.meal, at)
-    if (guard.closed) throw domainError('PAST_CUTOFF', '该餐次已截止，无法下单')
-    const meal = guard.meal
-    if (meal.status !== MEAL_ONGOING) throw domainError('MEAL_LOCKED', '该餐次已锁定，无法修改点选')
+    const meal = await openWriteMeal(store, mealId, openid, at, '下单')
 
     if (dishes == null || !Array.isArray(dishes)) {
       throw domainError('DISHES_INVALID', 'dishes 须为数组')
@@ -98,16 +94,12 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
       return buildView(store, meal, openid, { dropped, now: at })
     }
 
-    const orderDoc = {
-      _id: `${mealId}:${openid}`,
-      meal_id: mealId,
-      family_id: meal.family_id,
-      user_openid: openid,
-      user_nickname: nickname || '',
-      dishes: kept.map((row) => ({ dish_id: row.dishId, name: row.name, quantity: row.quantity })),
+    const orderDoc = orderDocOf(meal, openid, {
+      nickname: nickname || '',
+      dishes: kept,
       note: String(note == null ? '' : note).trim(),
-      created_at: at,
-    }
+      at,
+    })
     await store.upsertOrder(orderDoc)
     // 授权记账(折叠): 仅布尔显式结果才落库(undefined 即旧调用方无感);
     // 撞 _id 即「每人每餐只记一条」的原子折叠 —— 已存在(不论 granted 真伪)绝不覆盖
@@ -136,7 +128,56 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
     return { won: true, meal: { ...meal, summary } }
   }
 
-  // ── 到期守卫（T8）: 写命令前置 —— ongoing ∧ now>=deadline 时先代截止再按真实状态判定 ──
+  // ── 复制昨天（T7）: 昨日同 slot 全员副本, fill-only 不覆盖今日已有选点 ──
+  // 契约见 meal-engine.md(锁定) + issue #7 AC 差异: 复制范围以文档为准 = 全员副本,
+  // AC 中「当前用户…无 → 复制」是 fill-only 判定步骤对每名成员逐人的措辞。
+  // 规则: 1) 写命令先跑 close-if-due(赢家落 PAST_CUTOFF, 已锁落 MEAL_LOCKED);
+  //       2) 昨日餐次不存在或无人点餐 → NO_YESTERDAY_DATA(非致命, 前端提示);
+  //       3) 先对昨日全部订单预校验(不存在/别家菜 → DISH_UNKNOWN 整体拒绝,
+  //          保证无部分写入 —— 校验与写入分离, 不受 listOrders 返回顺序影响),
+  //          再逐人写入: 今日已有订单(每人每餐一单, 存在即跳过) → 不覆盖;
+  //          下架/软删 → 非致命 dropped; 全被过滤 → 不落空单;
+  //          note 携带昨日 note 并追加「[复制自昨日]」(溯源);
+  //       4) 返回 MealView, copied/dropped 以调用者本人为范围(全员复制照做, 提示只给调用者)。
+  async function copyLastSelection(mealId, openid, { now } = {}) {
+    const at = now == null ? clock.now() : now
+    const meal = await openWriteMeal(store, mealId, openid, at, '复制昨日点选')
+
+    const yesterdayId = `${meal.family_id}:${yesterdayOf(meal.date)}:${meal.slot}`
+    const yesterdayMeal = await store.getMeal(yesterdayId)
+    if (!yesterdayMeal) throw domainError('NO_YESTERDAY_DATA', '昨天该餐次没人点菜')
+    const prevOrders = await store.listOrders(yesterdayId)
+    if (prevOrders.length === 0) throw domainError('NO_YESTERDAY_DATA', '昨天该餐次没人点菜')
+
+    // 第一趟: 预校验(无任何写入) —— 校验失败整体拒绝, 保证无部分写入
+    const targets = []
+    for (const prev of prevOrders) {
+      // fill-only: 每人每餐一单(派生 _id=mealId:openid), 今日已有订单的成员跳过不覆盖
+      if (await store.getOrder(mealId, prev.user_openid)) continue
+      const prevDishes = (prev.dishes || []).map((row) => ({ dishId: row.dish_id, quantity: row.quantity }))
+      targets.push({ prev, ...(await resolveDishes(store, meal, prevDishes)) })
+    }
+    // 第二趟: 逐个写入(校验已全部通过)
+    let myCopied = []
+    let myDropped = []
+    for (const { prev, kept, dropped } of targets) {
+      if (prev.user_openid === openid) {
+        myCopied = kept.map((row) => ({ dishId: row.dishId, dishName: row.name, quantity: row.quantity }))
+        myDropped = dropped // 全被过滤时也随 dropped 提示(不因不落单而丢)
+      }
+      if (kept.length === 0) continue // 全被过滤 → 不落空单, 过滤结果仍随 dropped 提示
+      const prevNote = String(prev.note == null ? '' : prev.note).trim()
+      await store.upsertOrder(orderDocOf(meal, prev.user_openid, {
+        nickname: String(prev.user_nickname || ''),
+        dishes: kept,
+        note: `${prevNote}${prevNote ? ' ' : ''}[复制自昨日]`,
+        at,
+      }))
+    }
+    return buildView(store, meal, openid, { dropped: myDropped, copied: myCopied, now: at })
+  }
+
+  // ── 截止守卫（T8）: 写命令前置 —— ongoing ∧ now>=deadline 时先代截止再按真实状态判定 ──
   // 无论是否代截止都重读 meal 返回真实状态(守护「按关闭后的真实状态判定」: 读后-判定前
   // 若有并发 closeEarly 抢先, 本守卫看到 closed 而不是陈旧 ongoing); 返回
   // {meal: 当前真实状态, closed: 本次是否由本守卫代截止}(输家 closed=false, 调用方落 MEAL_LOCKED)。
@@ -147,6 +188,17 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
     }
     const { won, meal: fresh } = await closePipeline(store, meal._id, now, true)
     return { meal: fresh, closed: won }
+  }
+
+  // ── 写命令前置守卫（placeOrder/copyLastSelection 共用）: close-if-due 后按真实状态判定 ──
+  // 赢家(本守卫代截止) → PAST_CUTOFF; 已 closed/prepared(含抢占输家) → MEAL_LOCKED。
+  async function openWriteMeal(store, mealId, openid, at, action) {
+    const { meal: opened } = await openMeal(store, mealId, openid)
+    const guard = await closeIfDue(store, opened, at)
+    if (guard.closed) throw domainError('PAST_CUTOFF', `该餐次已截止，无法${action}`)
+    const meal = guard.meal
+    if (meal.status !== MEAL_ONGOING) throw domainError('MEAL_LOCKED', `该餐次已锁定，无法${action}`)
+    return meal
   }
 
   // ── 手动提前截止: 与自动截止走完全相同的关闭管线(requireDue=false, 不受 deadline 约束) ──
@@ -173,6 +225,20 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
       else skipped += 1
     }
     return { closed, skipped }
+  }
+}
+
+// ── 订单文档构建（placeOrder/copyLastSelection 共用）: 派生 _id=mealId:openid, dishes 快照现名
+function orderDocOf(meal, openid, { nickname, dishes, note, at }) {
+  return {
+    _id: `${meal._id}:${openid}`,
+    meal_id: meal._id,
+    family_id: meal.family_id,
+    user_openid: openid,
+    user_nickname: nickname,
+    dishes: dishes.map((row) => ({ dish_id: row.dishId, name: row.name, quantity: row.quantity })),
+    note,
+    created_at: at,
   }
 }
 
@@ -281,8 +347,9 @@ function capText(text, max) {
   return `${text.slice(0, max - 1)}…`
 }
 
-// ── 视图: initiate/viewMeal/placeOrder 共用同一构建(餐次页单路径) ──
-async function buildView(store, meal, openid, { dropped = [], now } = {}) {
+// ── 视图: initiate/viewMeal/placeOrder/copyLastSelection 共用同一构建(餐次页单路径) ──
+// copied: copyLastSelection 特有(调用者本人的复制清单), 其余命令恒空 —— 形状稳定供前端透传
+async function buildView(store, meal, openid, { dropped = [], copied = [], now } = {}) {
   const at = now == null ? Date.now() : now
   const familyId = meal.family_id
   const activeRows = await store.listDishes(familyId, false)
@@ -333,6 +400,7 @@ async function buildView(store, meal, openid, { dropped = [], now } = {}) {
     canOrder: meal.status === MEAL_ONGOING && at < meal.deadline,
     granted,
     dropped,
+    copied,
   }
 }
 
@@ -370,6 +438,11 @@ function localDateOf(ts) {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${m}-${day}`
+}
+
+// 昨日定位: 日期字符串向前偏移(本地时区语义, 与 deadlineOf/localDateOf 同源) —— copyLastSelection 用
+function yesterdayOf(date) {
+  return localDateOf(new Date(`${date}T00:00:00`).getTime() - 86400000)
 }
 
 function domainError(code, message) {

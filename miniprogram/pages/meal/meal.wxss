@@ -75,6 +75,32 @@
   color: #888;
 }
 
+.copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.copy-hint {
+  font-size: 24rpx;
+  color: #888;
+  flex: 1;
+}
+
+.copy-btn {
+  font-size: 26rpx;
+  color: #07c160;
+  border: 1rpx solid #07c160;
+  border-radius: 28rpx;
+  padding: 10rpx 32rpx;
+}
+
+.copy-btn-disabled {
+  opacity: 0.5;
+}
+
 .close-early-row {
   display: flex;
   align-items: center;

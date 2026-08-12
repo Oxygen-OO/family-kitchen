@@ -10,6 +10,7 @@ Page({
     mealId: '',
     loading: false,
     submitting: false,
+    copying: false,
     meal: null,
     slotLabel: '',
     status: '',
@@ -242,6 +243,43 @@ Page({
     } finally {
       this.setData({ submitting: false })
     }
+  },
+
+  // ── 复制昨天(T7): 服务端全员副本 + fill-only, 这里只发请求并刷新 ──
+  // copied/dropped 是调用者本人的复制结果(全员复制照做, 提示只给调用者)
+  onCopyYesterday() {
+    if (this.data.copying) return
+    this.setData({ copying: true })
+    const done = async () => {
+      try {
+        const view = await api.copyLastSelection(this.mealId)
+        this.applyView(view)
+        const hasDropped = view.dropped && view.dropped.length > 0
+        if (view.copied && view.copied.length > 0) {
+          wx.showToast({ title: '已复制昨日点选', icon: 'success' })
+        } else if (!hasDropped) {
+          // 调用者昨日没点或今日已有选点(fill-only 跳过) → 无本人复制结果
+          wx.showToast({ title: '没有可复制的内容', icon: 'none' })
+        }
+        // 全被过滤(复制结果空但 dropped 有货)时只弹下架说明, 避免与空结果提示自相矛盾
+        if (hasDropped) {
+          this.notifyDropped(view.dropped)
+        }
+      } catch (err) {
+        if (err.code === 'NO_YESTERDAY_DATA') {
+          wx.showToast({ title: '昨天没人点菜', icon: 'none' })
+        } else if (err.code === 'PAST_CUTOFF' || err.code === 'MEAL_LOCKED') {
+          // 复制瞬间到点(代截止)/已锁: 刷新按只读展示
+          await this.load()
+          wx.showToast({ title: err.message || '该餐次已锁定', icon: 'none' })
+        } else {
+          wx.showToast({ title: err.message || '复制失败', icon: 'none' })
+        }
+      } finally {
+        this.setData({ copying: false })
+      }
+    }
+    done()
   },
 
   // ── 手动提前截止: 任何成员可触发, 服务端校验家庭成员; 走与自动截止相同的关闭管线 ──
