@@ -17,6 +17,8 @@ const storage = {
 App({
   globalData: {
     currentFamilyId: '',
+    // T11: 分享卡片冷启动待处理邀请码(主页转交 onboarding 登录后自动入伙; 消费/确定失败后即清, 网络错误保留重试)
+    pendingInviteCode: '',
   },
 
   onLaunch() {

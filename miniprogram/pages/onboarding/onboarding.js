@@ -1,6 +1,7 @@
 'use strict'
 
 const { api } = require('../../utils/api.js')
+const { createInviteFlow, isTerminalFailure, showInviteResult } = require('../../utils/invite.js')
 
 Page({
   data: {
@@ -12,12 +13,35 @@ Page({
     submitting: false,
   },
 
+  onLoad() {
+    const app = getApp()
+    this.inviteFlow = createInviteFlow({
+      api,
+      boot: () => app.boot(),
+      setCurrentFamily: (id) => app.setCurrentFamily(id),
+      refreshSession: () => app.refreshSession(),
+    })
+    this.inviteUi = {
+      toast: (title) => wx.showToast({ title, icon: 'none' }),
+      modal: (title, content) => wx.showModal({ title, content, showCancel: false }),
+      go: (url) => setTimeout(() => wx.reLaunch({ url }), 600),
+      alreadyAtHome: false,
+    }
+  },
+
   async onShow() {
     const app = getApp()
     try {
       const boot = await app.boot()
       if (boot.route === 'home') {
         wx.reLaunch({ url: '/pages/index/index' })
+        return
+      }
+      // T11: 分享卡片冷启动 → 登录成功后自动 joinByCode; 首登无档案者先完成自填昵称
+      // (identity.md 首登引导), onSaveProfile 成功后自动加入
+      const pending = app.globalData.pendingInviteCode
+      if (pending && boot.user.nickname) {
+        await this.joinPending(app)
         return
       }
       const cached = this.data.nickname
@@ -29,6 +53,15 @@ Page({
     } catch (err) {
       // 网络异常: 静默, 下次 onShow 兜底重试
     }
+  },
+
+  // T11: 待处理邀请入伙; 确定失败(域错误码)清邀请码, 网络错误保留下次重试
+  async joinPending(app) {
+    const result = await this.inviteFlow.joinFromInvite(app.globalData.pendingInviteCode)
+    if (result.status !== 'failed' || isTerminalFailure(result)) {
+      app.globalData.pendingInviteCode = ''
+    }
+    showInviteResult(result, this.inviteUi)
   },
 
   onChooseAvatar(e) {
@@ -58,6 +91,11 @@ Page({
       const avatar = await this.uploadAvatarOrEmpty(this.data.avatarUrl)
       const { user } = await api.saveProfile({ nickname, avatar })
       this.setData({ nickname: user.nickname, avatarUrl: user.avatar || '', saving: false })
+      // T11: 首登自填昵称完成 → 自动加入分享卡片指向的家庭
+      if (getApp().globalData.pendingInviteCode) {
+        await this.joinPending(getApp())
+        return
+      }
       wx.showToast({ title: '已保存', icon: 'success' })
     } catch (err) {
       this.setData({ saving: false })
@@ -90,6 +128,8 @@ Page({
       await runApi()
       const app = getApp()
       await app.refreshSession()
+      // 手动建家/加入成功: 消费掉待处理邀请, 防残留后置重试
+      app.globalData.pendingInviteCode = ''
       this.setData({ submitting: false, familyName: '', inviteCode: '' })
       wx.showToast({ title: successText, icon: 'success' })
       setTimeout(() => wx.reLaunch({ url: '/pages/index/index' }), 600)

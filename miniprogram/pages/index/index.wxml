@@ -24,12 +24,18 @@
   <view class="family-card" wx:if="{{currentFamilyId}}">
     <text class="family-label">当前家庭</text>
     <text class="family-name">{{currentFamilyName}}</text>
-    <button
-      class="invite-btn"
-      loading="{{inviting}}"
-      disabled="{{inviting}}"
-      bindtap="onInvite"
-    >邀请家人</button>
+    <view class="invite-row">
+      <button
+        class="invite-btn"
+        loading="{{inviting}}"
+        disabled="{{inviting}}"
+        bindtap="onInvite"
+      >邀请家人</button>
+      <button
+        class="share-btn"
+        open-type="share"
+      >分享卡片</button>
+    </view>
     <button
       class="menu-btn"
       bindtap="onOpenMenu"

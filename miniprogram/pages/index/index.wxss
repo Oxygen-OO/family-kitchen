@@ -84,10 +84,25 @@
   color: #333;
 }
 
-.invite-btn {
+.invite-row {
   margin-top: 16rpx;
+  display: flex;
+  gap: 16rpx;
+}
+
+.invite-btn {
+  flex: 1;
   background: #07c160;
   color: #fff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}
+
+.share-btn {
+  flex: 1;
+  background: #fff;
+  color: #07c160;
+  border: 2rpx solid #07c160;
   border-radius: 16rpx;
   font-size: 30rpx;
 }
