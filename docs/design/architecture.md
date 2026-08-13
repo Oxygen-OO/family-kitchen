@@ -5,7 +5,7 @@
 业务逻辑只允许出现在黑线以下；页面永远不直接碰云数据库。
 
 ```
-小程序页面 (薄壳: onboarding / index / dishes / meal / plan / my / settings)
+小程序页面 (薄壳: onboarding / index / dishes / dish-edit / dishes-removed / meal / prep / members, 分享入口内嵌 index 与 members)
    │ seam 1: wx.cloud.callFunction(action, payload) —— 客户端只学 action 名与载荷
    ▼
 云函数: cloudfunctions/family-kitchen/  (单函数起步, 见「部署形态」)
@@ -66,7 +66,8 @@
 - 断言只跨外部 seam（错误码/视图/快照/发送序列/claim 计数），不窥探实现——replace, don't layer。
 - PrepSummarizer 无 I/O，直接纯函数测。
 - 外部 seam 1（action 路由壳）由集成冒烟覆盖，不进单测。
+- 现状：199 条跨 seam 单测全绿（`npm test`）。
 
 ## 范围引用
 
-领域规则源：CONTEXT.md（词汇与不变量）、docs/adr/0001-0003（家庭独立实体 / 一次性订阅 / 数据保守主义）。MVP 边界与工单见 GitHub Issues（T1–T11，含原生阻塞依赖）。
+领域规则源：CONTEXT.md（词汇与不变量）、docs/adr/0001-0003（家庭独立实体 / 一次性订阅 / 数据保守主义）。MVP 工单 T1–T11（GitHub Issues，含原生阻塞依赖）**已全部交付关闭**（8f92fe4）。
