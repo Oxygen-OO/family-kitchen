@@ -38,6 +38,10 @@
       class="members-btn"
       bindtap="onOpenMembers"
     >成员管理</button>
+    <button
+      class="prep-btn"
+      bindtap="onOpenPrep"
+    >备餐清单</button>
     <view class="meal-entry">
       <text class="meal-entry-title">今日餐次</text>
       <view class="meal-slots">

@@ -164,6 +164,16 @@ function createMemStore() {
       meals.set(mealId, { ...doc, status: 'closed', closed_at: now })
       return { updated: 1 }
     },
+    // claimPrepared(T10): 条件更新(同 claimClose 裁决模式) —— 仅当存在 ∧ status='closed'
+    // 才置 prepared+prepared_by+prepared_at 返回 {updated:1}, 任一不满足返回 {updated:0}
+    // (并发双标永远只有一个赢家, 后到者不覆盖先手记账 —— 不可撤销的原子素材)。
+    async claimPrepared(mealId, openid, now) {
+      const meals = col('meals')
+      const doc = meals.get(mealId)
+      if (!doc || doc.status !== 'closed') return { updated: 0 }
+      meals.set(mealId, { ...doc, status: 'prepared', prepared_by: openid, prepared_at: now })
+      return { updated: 1 }
+    },
     async findDueMeals(now) {
       return [...col('meals').values()]
         .filter((m) => m.status === 'ongoing' && m.deadline <= now)

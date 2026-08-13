@@ -1,9 +1,8 @@
 'use strict'
 
 const { api } = require('../../utils/api.js')
+const { SLOT_LABELS } = require('../../utils/slots.js')
 const { SUBSCRIBE_TEMPLATE_ID } = require('../../config.js')
-
-const SLOT_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' }
 
 Page({
   data: {

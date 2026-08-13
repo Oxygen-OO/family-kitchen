@@ -56,6 +56,18 @@ AC 的拒绝码写作 `MEAL_CLOSED`；本表以 `MEAL_LOCKED(closed/prepared 禁
 同一命令撞已锁餐次时：本次由 close-if-due 当场代截止（抢到 claim）→ `PAST_CUTOFF`；
 已 closed/prepared（含竞争输家）→ `MEAL_LOCKED`。
 
+T10 订正（markPrepared 语义澄清，接口行与错误表为准）：
+- 不变量行「写命令…仅 ongoing」为笔误，markPrepared 的实际判据以接口行为准：
+  **仅 closed → prepared**，其余状态（ongoing/已 prepared）一律 `NOT_ONGOING`。
+- **markPrepared 不走 close-if-due**：备餐标记是关闭后的动作，ongoing 餐次（含到点
+  未关）→ NOT_ONGOING，不代截止、不产生 `PAST_CUTOFF`（代截止只属于写入命令的
+  守卫生效范围）。到点未关的餐次由 cron 兜底扫描补关。
+- 转态经 `claimPrepared` 条件更新原子裁决（where {_id, status:'closed'}）——并发双标
+  只有一个赢家，抢占输家与直接对非 closed 调用同码 `NOT_ONGOING`；后到者绝不覆盖
+  先手 `prepared_by/prepared_at`（不可撤销 + 记账原子性同一保证）。
+- 关闭管线物化后的崩溃窗口（summary 缺失）在备餐页以空清单 + 显式空态提示容错，
+  后端零改动（viewMeal 已按 `meal.summary || null` 透传）。
+
 T7 增补（issue #7 AC 与锁定文档措辞差异，文档优先，先例同上）：
 - **复制范围 = 全员副本**（非仅发起者）：昨日同 slot 每名成员的选点复制到今日各自名下；
   AC 中「当前用户…无 → 复制」是 fill-only 判定步骤对每名成员的逐人措辞，勿误读为只复制发起者。
@@ -72,7 +84,8 @@ T7 增补（issue #7 AC 与锁定文档措辞差异，文档优先，先例同�
 不变量与顺序约束（调用方需知的全部事实）：
 - 所有入口第一步过家庭守卫：成员 ∧ 家庭未冻结（经 MealStore.familyCtx）；非成员/冻结一律拒绝。
 - `(family_id, date, slot)` 唯一，撞键 = MEAL_EXISTS；closed/prepared 不可重开（命令集里根本没有 reopen）。
-- 写命令（placeOrder/copyLastSelection/markPrepared）仅 ongoing；closeEarly 仅 ongoing；markPrepared 仅 closed。所有写命令先跑 close-if-due。
+- 写命令（placeOrder/copyLastSelection/markPrepared）仅 ongoing；closeEarly 仅 ongoing；markPrepared 仅 closed。
+  所有写命令先跑 close-if-due —— markPrepared 除外（见 T10 订正：关闭后动作，状态不符一律 NOT_ONGOING）。
 - viewMeal 永不产生副作用。
 - 授权消费只发生在关闭那一刻，语义 = **at-most-once**（见下）。
 
@@ -119,7 +132,7 @@ closeIfDue / closeEarly / scanDue
 
 | Port | 分类 | 生产 adapter | 测试 adapter |
 |---|---|---|---|
-| MealStore（families/family_members/meals/orders/dishes/subscribes） | remote-but-owned | wx-server-sdk（唯一 import 点） | 内存 Map 双胞胎，**忠实复刻条件更新语义**(claimGrant 同 claimClose) |
+| MealStore（families/family_members/meals/orders/dishes/subscribes） | remote-but-owned | wx-server-sdk（唯一 import 点） | 内存 Map 双胞胎，**忠实复刻条件更新语义**(claimClose/claimPrepared 同构裁决) |
 | Clock | in-process 注入 | Date.now | Fixed(now) 冻结时间 |
 | Notifier（订阅消息发送） | true external | lib/ports/notifier.js 适配器(注入 cloud.openapi.subscribeMessage.send; 模板 ID 走 config, 未配置 → 跳过+日志不发送) | Spy：断言「每人恰一条、未授权零条、按 claim 顺序」 |
 

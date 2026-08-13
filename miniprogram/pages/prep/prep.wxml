@@ -1,0 +1,76 @@
+<view class="prep">
+  <!-- 日期选择: 默认今天, 可切过去日期看历史(只读), 未来灰置(picker end=today + 明日箭头禁用) -->
+  <view class="datebar">
+    <view class="day-btn" bindtap="onPrevDay">‹</view>
+    <picker mode="date" value="{{date}}" end="{{today}}" bindchange="onDateChange">
+      <view class="date-display">
+        <text class="date-text">{{date}}</text>
+        <text class="today-tag" wx:if="{{date === today}}">今天</text>
+        <text class="past-tag" wx:else>历史</text>
+      </view>
+    </picker>
+    <view class="day-btn {{date === today ? 'day-disabled' : ''}}" bindtap="onNextDay">›</view>
+  </view>
+
+  <!-- 双视图切换: 按菜品(谁点了/共几份/软删菜标注) / 按食材(精确去重采购清单) -->
+  <view class="view-switcher">
+    <text class="view-btn {{viewMode === 'dish' ? 'active' : ''}}" data-mode="dish" bindtap="onSwitchView">按菜品</text>
+    <text class="view-btn {{viewMode === 'ingredient' ? 'active' : ''}}" data-mode="ingredient" bindtap="onSwitchView">按食材</text>
+  </view>
+
+  <view class="empty-tip" wx:if="{{allMissed}}">这一天还没有发起任何餐次</view>
+
+  <!-- 三餐卡片: 不存在即无卡; 三态分卡(ongoing 实时预览 / closed 待备餐 / prepared 已备餐) -->
+  <view class="meal-card" wx:for="{{slots}}" wx:key="slot" wx:for-item="item" wx:if="{{item.view}}">
+    <view class="card-title-row">
+      <text class="card-slot">{{item.label}}</text>
+      <text class="status-badge ongoing" wx:if="{{item.view.meal.status === 'ongoing'}}">进行中</text>
+      <text class="status-badge closed" wx:elif="{{item.view.meal.status === 'closed'}}">已截止 · 待备餐</text>
+      <text class="status-badge prepared" wx:else>已备餐</text>
+      <text class="prepared-at" wx:if="{{item.preparedAtText}}">{{item.preparedAtText}}</text>
+    </view>
+    <view class="card-hint" wx:if="{{item.view.meal.status === 'ongoing'}}">实时预览：点选定案后此清单即冻结</view>
+
+    <!-- summary 缺失(T8 崩溃窗口): 空清单 + 显式空态提示, 后端零改动 -->
+    <view class="schema-empty" wx:if="{{item.summaryMissing}}">
+      <text class="schema-empty-text">备餐清单暂不可用</text>
+      <text class="schema-empty-sub">截止瞬间生成失败，请稍后重新进入查看</text>
+    </view>
+    <block wx:else>
+      <view class="empty-tip" wx:if="{{item.isEmpty}}">还没有人点餐</view>
+      <block wx:else>
+        <!-- 按菜品: 谁点了 / 共几份 / 软删菜 removed 标注 -->
+        <view class="dish-list" wx:if="{{viewMode === 'dish'}}">
+          <view class="dish-row" wx:for="{{item.dishRows}}" wx:key="dishId" wx:for-item="row">
+            <view class="dish-row-title">
+              <text class="dish-name">{{row.dishName}}</text>
+              <text class="removed-tag" wx:if="{{row.removed}}">已下架</text>
+              <text class="dish-qty">×{{row.totalQuantity}}</text>
+            </view>
+            <text class="dish-people">{{row.peopleText}}</text>
+          </view>
+        </view>
+        <!-- 按食材: 精确去重采购清单, 长按整卡复制文本 -->
+        <view class="ing-list" wx:else bindlongpress="onCopyIngredients" data-index="{{index}}">
+          <view class="ing-row" wx:for="{{item.ingredientRows}}" wx:key="name" wx:for-item="ing">
+            <text class="ing-name">{{ing.name}}</text>
+            <text class="ing-amount">
+              {{ing.amountText}}
+              <text class="ing-dishcount" wx:if="{{ing.dishCount > 1}}">·涉及{{ing.dishCount}}道菜</text>
+            </text>
+          </view>
+          <text class="copy-hint">长按复制食材清单</text>
+        </view>
+      </block>
+    </block>
+
+    <!-- 标记已备餐: 仅 closed 可见; 点击后服务端原子转态, 刷新按真实状态展示 -->
+    <view class="mark-row" wx:if="{{item.view.meal.status === 'closed'}}">
+      <view
+        class="mark-btn {{markingMealId === item.mealId ? 'mark-disabled' : ''}}"
+        data-mealid="{{item.mealId}}"
+        bindtap="onMarkPrepared"
+      >标记已备餐</view>
+    </view>
+  </view>
+</view>

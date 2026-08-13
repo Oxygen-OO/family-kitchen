@@ -28,7 +28,7 @@ const NOOP_NOTIFIER = { send: async () => ({ ok: false, skipped: 'no_notifier' }
  * @param {{send: Function}} notifier 订阅消息发送 port（生产 = lib/ports/notifier 适配器, 测试 = Spy）
  */
 function createMealEngine(store, clock = { now: () => Date.now() }, notifier = NOOP_NOTIFIER) {
-  return { initiate, viewMeal, placeOrder, copyLastSelection, closeEarly, scanDue }
+  return { initiate, viewMeal, placeOrder, copyLastSelection, closeEarly, markPrepared, scanDue }
 
   // ── 发起: (family_id, date, slot) 唯一场; 同键已存在任何状态 → MEAL_EXISTS(命令集无 reopen) ──
   async function initiate({ familyId, date, slot }, openid, { deadline, now } = {}) {
@@ -210,6 +210,24 @@ function createMealEngine(store, clock = { now: () => Date.now() }, notifier = N
     const { won, meal: closed } = await closePipeline(store, mealId, at, false)
     if (!won) throw domainError('NOT_ONGOING', '该餐次刚被其他成员截止')
     return buildView(store, closed, openid, { now: at })
+  }
+
+  // ── 标记已备餐(T10): 仅 closed → prepared, 记录 prepared_by/prepared_at, 不可撤销 ──
+  // 与 closeEarly 同构: 家庭守卫 → 状态判据(仅 closed, 其余一律 NOT_ONGOING) → 原子抢占
+  // (claimPrepared 条件更新 where {_id, status:'closed'}) → 赢家 buildView。
+  // 语义要点(锁定文档 meal-engine.md T10 订正):
+  //   - 不走 close-if-due: 备餐标记是「关闭后」的动作, ongoing(含到点未关) → NOT_ONGOING,
+  //     不代截止、无 PAST_CUTOFF 语义(代截止是写入命令的守卫生效范围, 见 openWriteMeal);
+  //   - 抢占输家(他人先手已标)同样落 NOT_ONGOING, 与 closeEarly 输家同码 ——
+  //     后到者绝不覆盖先手 prepared_by/prepared_at(记账原子性与「不可撤销」同一保证);
+  //   - prepared 再标 → NOT_ONGOING(命令集无重标, 状态机无环)。
+  async function markPrepared(mealId, openid, { now } = {}) {
+    const at = now == null ? clock.now() : now
+    const { meal } = await openMeal(store, mealId, openid)
+    if (meal.status !== 'closed') throw domainError('NOT_ONGOING', '仅已截止餐次可标记已备餐')
+    const { updated } = await store.claimPrepared(mealId, openid, at)
+    if (updated !== 1) throw domainError('NOT_ONGOING', '该餐次已被标记备餐或状态已变化')
+    return buildView(store, await store.getMeal(mealId), openid, { now: at })
   }
 
   // ── cron 扫描: 无参幂等, 到期(ongoing ∧ deadline<=now)逐个走关闭管线 ──

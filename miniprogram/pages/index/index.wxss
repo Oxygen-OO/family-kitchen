@@ -110,6 +110,15 @@
   font-size: 30rpx;
 }
 
+.prep-btn {
+  margin-top: 16rpx;
+  background: #fff;
+  color: #b8860b;
+  border: 2rpx solid #b8860b;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+}
+
 .meal-entry {
   margin-top: 24rpx;
   border-top: 2rpx solid #f2f3f5;

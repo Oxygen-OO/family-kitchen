@@ -276,6 +276,15 @@ function createMealStore(db) {
       const res = await meals.where(cond).update({ data: { status: 'closed', closed_at: now } })
       return { updated: (res && res.stats && res.stats.updated) || 0 }
     },
+    // 备餐标记(T10): 同构原子裁决点 —— where {_id, status:'closed'} → update
+    // {status:'prepared', prepared_by, prepared_at}, stats.updated===1 才赢家;
+    // 非 closed(ongoing/已 prepared) → updated=0(后到不覆盖先手记账, 不可撤销的原子保证)。
+    claimPrepared: async (mealId, openid, now) => {
+      const res = await meals
+        .where({ _id: mealId, status: 'closed' })
+        .update({ data: { status: 'prepared', prepared_by: openid, prepared_at: now } })
+      return { updated: (res && res.stats && res.stats.updated) || 0 }
+    },
     findDueMeals: async (now) => {
       const rows = await collectionOrEmpty(
         meals.where({ status: 'ongoing', deadline: _.lte(now) }).limit(1000)

@@ -6,6 +6,7 @@
     "pages/dish-edit/dish-edit",
     "pages/dishes-removed/dishes-removed",
     "pages/meal/meal",
+    "pages/prep/prep",
     "pages/members/members"
   ],
   "window": {

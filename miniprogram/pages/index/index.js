@@ -1,12 +1,7 @@
 'use strict'
 
 const { api } = require('../../utils/api.js')
-
-const MEAL_SLOTS = [
-  { slot: 'breakfast', label: '早餐' },
-  { slot: 'lunch', label: '午餐' },
-  { slot: 'dinner', label: '晚餐' },
-]
+const { SLOTS: MEAL_SLOTS } = require('../../utils/slots.js')
 
 Page({
   data: {
@@ -68,6 +63,12 @@ Page({
   onOpenMembers() {
     if (!this.data.currentFamilyId) return
     wx.navigateTo({ url: '/pages/members/members' })
+  },
+
+  // 备餐清单页(T10): 厨师主场, 无家庭上下文不进
+  onOpenPrep() {
+    if (!this.data.currentFamilyId) return
+    wx.navigateTo({ url: '/pages/prep/prep' })
   },
 
   // 今日餐次入口: 先读(已有餐次任何状态均可进入只读/点餐), 未发起才写(发起失败如已过

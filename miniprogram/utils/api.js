@@ -56,6 +56,7 @@ const api = {
   placeOrder: (mealId, dishes, note, subscribed) => call('placeOrder', { mealId, dishes, note, subscribed }),
   copyLastSelection: (mealId) => call('copyLastSelection', { mealId }),
   closeEarly: (mealId) => call('closeEarly', { mealId }),
+  markPrepared: (mealId) => call('markPrepared', { mealId }),
 }
 
 function initCloud() {
